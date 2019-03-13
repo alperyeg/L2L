@@ -1,4 +1,4 @@
-from JUBE.jube2.main import main
+from jube2.main import main
 import os.path
 import pickle
 import time
@@ -120,17 +120,21 @@ class JUBERunner():
             self.write_scheduler_file(f)
 
         f.write("    <!-- Operation -->\n")
+        f.write("    <step name=\"env_activate\">\n")
+        f.write("       <do>source $HOME/miniconda2/bin/activate l2l</do>\n")
+        f.write("       <do>which python</do>\n")
+        f.write("    </step>   \n")
         f.write("    <step name=\"submit\" work_dir=\"" + self.path +
-                "/work/jobsystem_bench_${jube_benchmark_id}_${jube_wp_id}\" >\n")
+                "work/jobsystem_bench_${jube_benchmark_id}_${jube_wp_id}\" >\n")
         f.write("    <use>l2l_parameters</use>\n")
         f.write("    <use>execute_set</use>\n")
 
         if self.scheduler != 'None':
             f.write("    <use>files,sub_job</use>\n")
-            f.write("    <do done_file=\"" + self.path + "/ready_files/ready_w_" + str(
+            f.write("    <do done_file=\"" + self.path + "ready_files/ready_w_" + str(
                 self.generation) + "\">$submit_cmd $job_file </do> <!-- shell command -->\n")
         else:
-            f.write("    <do done_file=\"" + self.path + "/ready_files/ready_w_" + str(
+            f.write("    <do done_file=\"" + self.path + "ready_files/ready_w_" + str(
                 self.generation) + "\">$exec $index " + str(self.generation) +
                 " -n $tasks_per_job </do> <!-- shell command -->\n")
 
@@ -245,7 +249,7 @@ class JUBERunner():
         :param path_ready: path to store the ready files
         :return true if all files are present, false otherwise
         """
-        f = open(self.path + "/run_files/run_optimizee.py", "w")
+        f = open(self.path + "run_files/run_optimizee.py", "w")
         f.write("import pickle\n" +
                 "import sys\n" +
                 "idx = sys.argv[1]\n" +
