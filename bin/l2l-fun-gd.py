@@ -15,7 +15,7 @@ from l2l.optimizers.gradientdescent.optimizer import RMSPropParameters
 from l2l.paths import Paths
 
 from l2l.logging_tools import create_shared_logger_data, configure_loggers
-from l2l import utils as jube
+from l2l.utils import JUBE_runner as jube
 
 logger = logging.getLogger('bin.l2l-fun-gradientdescent')
 
@@ -23,7 +23,7 @@ logger = logging.getLogger('bin.l2l-fun-gradientdescent')
 def main():
     name = 'L2L-FUN-GD'
     try:
-        with open('bin/path.conf') as f:
+        with open('path.conf') as f:
             root_dir_path = f.read().strip()
     except FileNotFoundError:
         raise FileNotFoundError(
@@ -90,7 +90,7 @@ def main():
     # MPI Processes per job
     traj.f_add_parameter_to_group("JUBE_params", "tasks_per_job", "1")
     # The execution command
-    traj.f_add_parameter_to_group("JUBE_params", "exec", "mpirun python3 " + root_dir_path +
+    traj.f_add_parameter_to_group("JUBE_params", "exec", "mpirun python " + root_dir_path +
                                   "/run_files/run_optimizee.py")
     # Ready file for a generation
     traj.f_add_parameter_to_group("JUBE_params", "ready_file", root_dir_path + "/readyfiles/ready_w_")

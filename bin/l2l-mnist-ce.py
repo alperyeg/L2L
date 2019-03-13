@@ -9,7 +9,8 @@ from l2l.optimizers.crossentropy import CrossEntropyParameters, CrossEntropyOpti
 from l2l.optimizers.crossentropy.distribution import NoisyGaussian
 from l2l.paths import Paths
 
-from l2l import utils as jube
+# from l2l import utils as jube
+from l2l.utils import JUBE_runner as jube
 
 logger = logging.getLogger('bin.l2l-mnist-es')
 
@@ -17,7 +18,7 @@ logger = logging.getLogger('bin.l2l-mnist-es')
 def run_experiment():
     name = 'L2L-MNIST-CE'
     try:
-        with open('bin/path.conf') as f:
+        with open('path.conf') as f:
             root_dir_path = f.read().strip()
     except FileNotFoundError:
         raise FileNotFoundError("You have not set the root path to store your results."
@@ -84,7 +85,7 @@ def run_experiment():
     # MPI Processes per job
     traj.f_add_parameter_to_group("JUBE_params", "tasks_per_job", "1")
     # The execution command
-    traj.f_add_parameter_to_group("JUBE_params", "exec", "mpirun python3 " + root_dir_path +
+    traj.f_add_parameter_to_group("JUBE_params", "exec", "mpirun python " + root_dir_path +
                                   "/run_files/run_optimizee.py")
     # Ready file for a generation
     traj.f_add_parameter_to_group("JUBE_params", "ready_file", root_dir_path + "/readyfiles/ready_w_")
@@ -104,7 +105,7 @@ def run_experiment():
 
     ## Outerloop optimizer initialization
     optimizer_seed = 1234
-    optimizer_parameters = CrossEntropyParameters(pop_size=40, rho=0.9, smoothing=0.0, temp_decay=0, n_iteration=5000,
+    optimizer_parameters = CrossEntropyParameters(pop_size=2, rho=0.9, smoothing=0.0, temp_decay=0, n_iteration=10,
                                                   distribution=NoisyGaussian(noise_magnitude=1., noise_decay=0.99),
                                                   stop_criterion=np.inf, seed=optimizer_seed)
 
@@ -136,7 +137,8 @@ def main():
 
 
 if __name__ == '__main__':
-    from ipdb import launch_ipdb_on_exception
-
-    with launch_ipdb_on_exception():
-        main()
+    main()
+    # from ipdb import launch_ipdb_on_exception
+    #
+    # with launch_ipdb_on_exception():
+    #     main()
