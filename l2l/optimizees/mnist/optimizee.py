@@ -78,7 +78,35 @@ class MNISTOptimizee(Optimizee):
                     self.random_state.randn(np.prod(weight_shape)) / np.sqrt(weight_shape[1])
 
         # return dict(weights=self.random_state.randn(cumulative_num_weights_per_layer[-1]))
-        return dict(weights=flattened_weights)
+        if not self.nn.get_shifts():
+            self.nn.shifts.append(flattened_weights)
+            # shift = self.random_state.randn(len(flattened_weights))
+            # self.nn.set_shifts(shift)
+            for _ in range(9):
+                self.nn.get_shifts().append(
+                    self.random_state.randn(len(flattened_weights)))
+        # net_weights = self.flatten_to_net_weights(flattened_weights)
+        # network_output = self.nn.get_output_activation(self.data_images,
+        #                                                *net_weights)
+        return dict(model=self.nn,
+                    weights=flattened_weights, shift=self.nn.get_shifts(),
+                    targets=self.data_targets,
+                    input=self.data_images)
+
+    def flatten_to_net_weights(self, flattened_weights):
+        weight_shapes = self.nn.get_weights_shapes()
+
+        cumulative_num_weights_per_layer = np.cumsum([np.prod(weight_shape) for weight_shape in weight_shapes])
+
+        weights = []
+        for i, weight_shape in enumerate(weight_shapes):
+            if i == 0:
+                w = flattened_weights[:cumulative_num_weights_per_layer[i]].reshape(weight_shape)
+            else:
+                w = flattened_weights[
+                    cumulative_num_weights_per_layer[i - 1]:cumulative_num_weights_per_layer[i]].reshape(weight_shape)
+            weights.append(w)
+        return weights
 
     def bounding_func(self, individual):
         """
@@ -97,11 +125,14 @@ class MNISTOptimizee(Optimizee):
         # taken care of by jube
 
         flattened_weights = traj.individual.weights
+        shifts = traj.individual.shift
+        flattened_weights *= shifts
         weight_shapes = self.nn.get_weights_shapes()
 
         cumulative_num_weights_per_layer = np.cumsum([np.prod(weight_shape) for weight_shape in weight_shapes])
 
         weights = []
+        shifts = []
         for i, weight_shape in enumerate(weight_shapes):
             if i == 0:
                 w = flattened_weights[:cumulative_num_weights_per_layer[i]].reshape(weight_shape)
@@ -109,6 +140,6 @@ class MNISTOptimizee(Optimizee):
                 w = flattened_weights[
                     cumulative_num_weights_per_layer[i - 1]:cumulative_num_weights_per_layer[i]].reshape(weight_shape)
             weights.append(w)
-
+        self.nn.set_shifts(shifts)
         self.nn.set_weights(*weights)
         return self.nn.score(self.data_images, self.data_targets)

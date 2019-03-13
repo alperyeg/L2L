@@ -34,6 +34,8 @@ class NeuralNetworkClassifier:
         self.n_input, self.n_hidden, self.n_output = n_input, n_hidden, n_output
         self.hidden_weights = np.zeros((self.n_hidden, self.n_input))
         self.output_weights = np.zeros((self.n_output, self.n_hidden))
+        self.shifts = []
+        # self.shifts = np.random.randn(self.nn.hidden_weights.size + self.nn.output_weights.size)
 
     def get_weights_shapes(self):
         """
@@ -60,6 +62,21 @@ class NeuralNetworkClassifier:
         n_total = len(y)
         score = n_correct / n_total
         return score
+
+    def get_output_activation(self, x, h_weights=None, o_weights=None):
+        if h_weights is None and o_weights is None:
+            h_weights = self.hidden_weights
+            o_weights = self.output_weights
+        hidden_activation = sigmoid(
+            np.dot(h_weights, x.T))  # -> n_hidden x batch_size
+        output_activation = np.dot(o_weights, hidden_activation)  # -> n_output x batch_size
+        return output_activation
+
+    def get_shifts(self):
+        return self.shifts
+
+    def set_shifts(self, shifts):
+        self.shifts = shifts
 
 
 def main():
