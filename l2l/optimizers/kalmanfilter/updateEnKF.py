@@ -1,5 +1,5 @@
 import numpy as np
-from numpy import sum, sqrt
+from numpy import sqrt
 from numpy.linalg import norm, inv, solve
 # from moments import moments
 
@@ -72,8 +72,8 @@ def update_enknf(data, ensemble, ensemble_size, moments1, u_exact,
 
     if isinstance(gamma, (int, float)):
         if float(gamma) == 0.:
-            gamma = np.eye(gamma_s)
-    # sqrt_inv_gamma = sqrt(inv(gamma))
+            gamma = np.eye(10)
+    sqrt_inv_gamma = sqrt(inv(gamma))
 
     Cpp = None
     Cup = None
@@ -81,10 +81,12 @@ def update_enknf(data, ensemble, ensemble_size, moments1, u_exact,
     ensemble = ensemble
 
     for i in range(maxit):
-        # # update G
-        # G = model.get_output_activation(data, *flatten_to_net_weights(
+        # update G
+        # G = model.get_output_activation(data, *_flatten_to_net_weights(
         #     model, m1))
         # G = G[np.newaxis].T
+
+        # g_all are all model evaluations for one pass
         g_all = []
         for l in range(ensemble_size):
             g_all.append(model.get_output_activation(data,
@@ -94,12 +96,13 @@ def update_enknf(data, ensemble, ensemble_size, moments1, u_exact,
             e[:, l] = ensemble[:, l] - m1
         g_all = np.array(g_all).T
         if u_exact is not None:
-            misfit, r = _calculate_misfit(ensemble, misfit, r, g_all, noise)
-        # _convergence(norm_uexact2=norm_uexact2,
-        #              norm_p2=norm_p2,
-        #              sqrt_inv_gamma=sqrt_inv_gamma,
-        #              ensemble_size=ensemble_size, G=G, m1=m1, M=M, E=E, R=R,
-        #              AE=AE, AR=AR, e=e, r=r, misfit=misfit)
+            misfit, r = _calculate_misfit(ensemble, ensemble_size, dims,
+                                          misfit, r, g_all, u_exact, noise)
+        _convergence(norm_uexact2=norm_uexact2,
+                     norm_p2=norm_p2,
+                     sqrt_inv_gamma=sqrt_inv_gamma,
+                     ensemble_size=ensemble_size, G=g_all, m1=m1, M=M, E=E,
+                     R=R, AE=AE, AR=AR, e=e, r=r, misfit=misfit)
         if stopping_crit == 'discrepancy' and noise > 0:
             if M[i] <= np.linalg.norm(noise, 2) ** 2:
                 break
@@ -109,7 +112,7 @@ def update_enknf(data, ensemble, ensemble_size, moments1, u_exact,
                     break
         else:
             pass
-            # sc = _stopping_criterion(y=observations, y_hat=G)
+            # sc = _stopping_criterion(y=observations, y_hat=g_all)
             # if sc <= tol:
             #     break
         for d in range(dims):
@@ -121,13 +124,11 @@ def update_enknf(data, ensemble, ensemble_size, moments1, u_exact,
             Cup = _cov_mat(ensemble, g, ensemble_size)
             Cpp = _cov_mat(g, g, ensemble_size)
             for j in range(ensemble_size):
-                # try linalg.lstsq(a,b) if a is not square
-                target = np.zeros(g.shape[0])
-                target[observations] = 1
-                target = target[np.newaxis].T
-                # tmp = solve(Cpp + gamma, target - np.argmax(G, 0))
-                tmp = solve(Cpp + gamma, target - g[:, j])
-                ensemble[:, j] = ensemble[:, j] + (Cup @ tmp)[:, j]
+                # create one hot vector
+                target = _one_hot_vector(observations[d], g.shape[0])
+                tmp = solve(Cpp + gamma, target - g[:, [j]])
+                ee = ensemble[:, [j]] + (Cup @ tmp)
+                ensemble[:, [j]] = ee
         m1 = np.mean(ensemble, axis=1)
     # return M, E, R, AE, AR, Cpp, Cup, m1
     return ensemble, Cpp, Cup, m1
@@ -139,7 +140,7 @@ def _convergence(m1, sqrt_inv_gamma,
                  e, r, misfit,
                  norm_uexact2=None, norm_p2=None):
     E.append(norm(e) ** 2 / norm(m1) ** 2 / ensemble_size)
-    AE.append(norm(sqrt_inv_gamma @ G @ e) ** 2 / norm(G @ m1) ** 2 / ensemble_size)
+    # AE.append(norm(sqrt_inv_gamma @ G) ** 2 / norm(G @ m1) ** 2 / ensemble_size)
     if norm_uexact2 is not None:
         R.append((norm(r) ** 2 / norm_uexact2) / ensemble_size)
         M.append((norm(misfit) ** 2) / ensemble_size)
@@ -178,7 +179,7 @@ def _get_shapes(observations, ensemble):
     """
     Returns individual shapes
     """
-    gamma_shape = ensemble.shape[1]
+    gamma_shape = observations.shape[0]
     dimensions = observations.shape[0]
     return gamma_shape, dimensions
 
@@ -197,14 +198,14 @@ def _convergence_non_vec(ensemble_size, u_exact, r, e, m1, gamma, g, p,
         tmp_r += norm(r[:, l], 2) ** 2 / norm(u_exact, 2) ** 2
         tmp_e += norm(e[:, l], 2) ** 2 / norm(m1, 2) ** 2
         tmp_ae += sqrt(inv(gamma)) @ g @ e[:, l].T @ \
-                  sqrt(inv(gamma)) @ g @ e[:, l] / norm(g @ m1) ** 2
+            sqrt(inv(gamma)) @ g @ e[:, l] / norm(g @ m1) ** 2
         tmp_ar += sqrt(inv(gamma)) @ g @ r[:, l].conj().T @ \
-                  sqrt(inv(gamma)) @ g @ r[:, l] / norm(p) ** 2
+            sqrt(inv(gamma)) @ g @ r[:, l] / norm(p) ** 2
         tmp_m += norm(misfit[:, l], 2) ** 2
     return tmp_e, tmp_r, tmp_ae, tmp_ar, tmp_m
 
 
-def _stopping_criterion(y, y_hat, loss_function='BCE'):
+def _stopping_criterion(y, y_hat, dims, loss_function='BCE'):
     """
     Loss functions
     :param y: target
@@ -212,17 +213,20 @@ def _stopping_criterion(y, y_hat, loss_function='BCE'):
     :param loss_function: name of the loss function
     :return: cost calculated according to `loss_function`
     """
-    if loss_function == 'BCE':
-        term1 = -y * np.log(y_hat)
-        term2 = (1 - y) * np.log(1 - y_hat)
-        return np.sum(term1 - term2)
-    elif loss_function == 'MAE' or 'L1':
-        return np.sum(np.absolute(y_hat - y))
-    elif loss_function == 'MSE' or 'L2':
-        return np.sum((y_hat - y) ** 2 / y.size)
-    else:
-        raise KeyError(
-            'Loss Function \'{}\' not understood.'.format(loss_function))
+    cost = 0
+    for d in dims:
+        if loss_function == 'BCE':
+            term1 = -y * np.log(y_hat[d])
+            term2 = (1 - y) * np.log(1 - y_hat[d])
+            cost += np.sum(term1 - term2)
+        elif loss_function == 'MAE' or 'L1':
+            cost += np.sum(np.absolute(y_hat[d] - y))
+        elif loss_function == 'MSE' or 'L2':
+            cost += np.sum((y_hat[d] - y) ** 2 / y.size)
+        else:
+            raise KeyError(
+                'Loss Function \'{}\' not understood.'.format(loss_function))
+    return cost
 
 
 def _flatten_to_net_weights(model, flattened_weights):
@@ -258,3 +262,13 @@ def _calculate_misfit(ensemble, ensemble_size, dims, misfit, r, g_all, u_exact,
             r[:, l] = ensemble[:, l] - u_exact
             misfit[:, l] = g[:, l] * r[l, 0] - noise
     return misfit, r
+
+
+def _one_hot_vector(index, shape):
+    """
+    Encode targets into one-hot representation
+    """
+    target = np.zeros(shape)
+    target[index] = 1.0
+    target = target[np.newaxis].T
+    return target

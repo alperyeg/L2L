@@ -113,7 +113,7 @@ def run_experiment():
     optimizer_seed = 1234
     optimizer_parameters = EnsembleKalmanFilterParameters(noise=0, gamma=0,
                                                           tol=1e-3,
-                                                          maxit=int(10),
+                                                          maxit=1000,
                                                           n_iteration=10,
                                                           stopping_crit='discrepancy',
                                                           pop_size=1)
