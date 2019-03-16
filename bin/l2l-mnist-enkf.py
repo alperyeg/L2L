@@ -116,7 +116,9 @@ def run_experiment():
                                                           maxit=1000,
                                                           n_iteration=10,
                                                           stopping_crit='discrepancy',
-                                                          pop_size=1)
+                                                          pop_size=1,
+                                                          n_batches=30,
+                                                          shuffle=False)
     logger.info("Optimizer parameters: %s", optimizer_parameters)
 
     optimizer = EnsembleKalmanFilter(traj,

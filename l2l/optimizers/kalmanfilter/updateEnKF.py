@@ -86,10 +86,11 @@ def update_enknf(data, ensemble, ensemble_size, moments1, u_exact,
         #     model, m1))
         # G = G[np.newaxis].T
 
+        idx = np.random.randint(0, dims)
         # g_all are all model evaluations for one pass
         g_all = []
         for l in range(ensemble_size):
-            g_all.append(model.get_output_activation(data,
+            g_all.append(model.get_output_activation(data[idx],
                                                      *_flatten_to_net_weights(
                                                          model,
                                                          ensemble[:, l])))
@@ -115,17 +116,26 @@ def update_enknf(data, ensemble, ensemble_size, moments1, u_exact,
             # sc = _stopping_criterion(y=observations, y_hat=g_all)
             # if sc <= tol:
             #     break
-        for d in range(dims):
-            if dims >= 2:
+        if g_all.ndim > 2:
+            for d in range(dims):
                 g = g_all[d]
-            else:
-                g = g_all
+                # Calculate the covariances
+                Cup = _cov_mat(ensemble, g, ensemble_size)
+                Cpp = _cov_mat(g, g, ensemble_size)
+                for j in range(ensemble_size):
+                    # create one hot vector
+                    target = _one_hot_vector(observations[d], g.shape[0])
+                    tmp = solve(Cpp + gamma, target - g[:, [j]])
+                    ee = ensemble[:, [j]] + (Cup @ tmp)
+                    ensemble[:, [j]] = ee
+        else:
+            g = g_all
             # Calculate the covariances
             Cup = _cov_mat(ensemble, g, ensemble_size)
             Cpp = _cov_mat(g, g, ensemble_size)
             for j in range(ensemble_size):
                 # create one hot vector
-                target = _one_hot_vector(observations[d], g.shape[0])
+                target = _one_hot_vector(observations[idx], g.shape[0])
                 tmp = solve(Cpp + gamma, target - g[:, [j]])
                 ee = ensemble[:, [j]] + (Cup @ tmp)
                 ensemble[:, [j]] = ee

@@ -17,18 +17,22 @@ logger = logging.getLogger("optimizers.kalmanfilter")
 EnsembleKalmanFilterParameters = namedtuple(
     'EnsembleKalmanFilter', ['noise', 'gamma', 'tol',
                              'maxit', 'stopping_crit', 'n_iteration',
-                             'pop_size']
+                             'pop_size', 'shuffle', 'n_batches']
 )
 
 
 EnsembleKalmanFilterParameters.__doc__ = """
-:param noise
+:param noise: float, Noise level
 :param gamma
-:param tol
-:param maxit
-:param stopping_crit
-:param n_iteration
-:param pop_size
+:param tol: float, Tolerance for convergence to stop the iteration inside the 
+            Kalman Filter
+:param maxit: int, Epochs to run inside the Kalman Filter
+:param stopping_crit: string, Name of the stopping criterion
+:param n_iteration: int, Number of iterations to perform
+:param pop_size: int, Minimal number of individuals per simulation.
+:param shuffle: bool, **True** if the data set should be shuffled. 
+                Default: True
+:param n_batches: int, Number of mini-batches to use in the Kalman Filter
 """
 
 
@@ -64,6 +68,8 @@ class EnsembleKalmanFilter(Optimizer):
                              comment='Number of iterations to run')
         traj.f_add_parameter('stopping_crit', parameters.stopping_crit,
                              comment='Name of stopping criterion')
+        traj.f_add_parameter('shuffle', parameters.shuffle)
+        traj.f_add_parameter('n_batches', parameters.n_batches)
 
         _, self.optimizee_individual_dict_spec = dict_to_list(
             self.optimizee_create_individual(), get_dict_spec=True)
@@ -119,13 +125,13 @@ class EnsembleKalmanFilter(Optimizer):
             data_input = i.input
             data_targets = i.targets[np.newaxis].T
             model = i.model
-            results = update_enknf(data=data_input[0],
+            results = update_enknf(data=data_input[0:100],
                                    ensemble=ens,
                                    ensemble_size=ensemble_size,
                                    moments1=np.mean(ens, axis=1),
                                    # moments1 = weights.mean(axis=1)
                                    u_exact=None,
-                                   observations=data_targets[0],
+                                   observations=data_targets[0:100],
                                    model=model, noise=traj.noise, p=None,
                                    gamma=gamma,  tol=traj.tol,
                                    maxit=traj.maxit,
