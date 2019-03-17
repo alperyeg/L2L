@@ -82,7 +82,7 @@ class MNISTOptimizee(Optimizee):
             self.nn.shifts.append(flattened_weights)
             # shift = self.random_state.randn(len(flattened_weights))
             # self.nn.set_shifts(shift)
-            for _ in range(9):
+            for _ in range(99):
                 self.nn.get_shifts().append(
                     self.random_state.randn(len(flattened_weights)))
         # net_weights = self.flatten_to_net_weights(flattened_weights)

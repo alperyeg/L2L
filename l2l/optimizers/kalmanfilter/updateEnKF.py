@@ -81,10 +81,6 @@ def update_enknf(data, ensemble, ensemble_size, moments1, u_exact,
     ensemble = ensemble
 
     for i in range(maxit):
-        # update G
-        # G = model.get_output_activation(data, *_flatten_to_net_weights(
-        #     model, m1))
-        # G = G[np.newaxis].T
 
         idx = np.random.randint(0, dims)
         # g_all are all model evaluations for one pass
@@ -119,29 +115,31 @@ def update_enknf(data, ensemble, ensemble_size, moments1, u_exact,
         if g_all.ndim > 2:
             for d in range(dims):
                 g = g_all[d]
-                # Calculate the covariances
-                Cup = _cov_mat(ensemble, g, ensemble_size)
-                Cpp = _cov_mat(g, g, ensemble_size)
-                for j in range(ensemble_size):
-                    # create one hot vector
-                    target = _one_hot_vector(observations[d], g.shape[0])
-                    tmp = solve(Cpp + gamma, target - g[:, [j]])
-                    ee = ensemble[:, [j]] + (Cup @ tmp)
-                    ensemble[:, [j]] = ee
+                ensemble = _update_step(ensemble, observations, g, gamma,
+                                        ensemble_size, d)
         else:
             g = g_all
-            # Calculate the covariances
-            Cup = _cov_mat(ensemble, g, ensemble_size)
-            Cpp = _cov_mat(g, g, ensemble_size)
-            for j in range(ensemble_size):
-                # create one hot vector
-                target = _one_hot_vector(observations[idx], g.shape[0])
-                tmp = solve(Cpp + gamma, target - g[:, [j]])
-                ee = ensemble[:, [j]] + (Cup @ tmp)
-                ensemble[:, [j]] = ee
+            ensemble = _update_step(ensemble, observations, g, gamma,
+                                    ensemble_size, idx)
         m1 = np.mean(ensemble, axis=1)
     # return M, E, R, AE, AR, Cpp, Cup, m1
     return ensemble, Cpp, Cup, m1
+
+
+def _update_step(ensemble, observations, g,  gamma, ensemble_size, idx):
+    """
+    Update step of the kalman filter
+    Calculates the covariances and returns new ensembles
+    """
+    # Calculate the covariances
+    Cup = _cov_mat(ensemble, g, ensemble_size)
+    Cpp = _cov_mat(g, g, ensemble_size)
+    for j in range(ensemble_size):
+        # create one hot vector
+        target = _one_hot_vector(observations[idx], g.shape[0])
+        tmp = solve(Cpp + gamma, target - g[:, [j]])
+        ensemble[:, [j]] = ensemble[:, [j]] + (Cup @ tmp)
+    return ensemble
 
 
 def _convergence(m1, sqrt_inv_gamma,
@@ -233,6 +231,8 @@ def _stopping_criterion(y, y_hat, dims, loss_function='BCE'):
             cost += np.sum(np.absolute(y_hat[d] - y))
         elif loss_function == 'MSE' or 'L2':
             cost += np.sum((y_hat[d] - y) ** 2 / y.size)
+        elif loss_function == 'norm':
+            cost += norm(y - y_hat[d])
         else:
             raise KeyError(
                 'Loss Function \'{}\' not understood.'.format(loss_function))
@@ -282,3 +282,22 @@ def _one_hot_vector(index, shape):
     target[index] = 1.0
     target = target[np.newaxis].T
     return target
+
+
+def _encode_targets(targets, shape):
+    return [_one_hot_vector(targets[i], shape) for i in range(targets.shape[0])]
+
+
+def _mini_batches(shape, n_batches):
+    """
+    Splits the data set into `n_batches` of shape `shape`
+    """
+    return np.array_split(range(shape), n_batches)
+
+
+def _shuffle(data, targets):
+    """
+    Shuffles the data and targets by permuting them
+    """
+    indices = np.random.permutation(targets.shape[0])
+    return data[indices], targets[indices]
