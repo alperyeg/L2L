@@ -70,7 +70,7 @@ class NeuralNetworkClassifier:
         hidden_activation = sigmoid(
             np.dot(h_weights, x.T))  # -> n_hidden x batch_size
         output_activation = np.dot(o_weights, hidden_activation)  # -> n_output x batch_size
-        return output_activation
+        return sigmoid(output_activation)
 
     def get_shifts(self):
         return self.shifts

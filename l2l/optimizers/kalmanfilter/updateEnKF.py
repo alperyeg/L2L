@@ -80,8 +80,16 @@ def update_enknf(data, ensemble, ensemble_size, moments1, u_exact,
 
     ensemble = ensemble
 
+    total_cost = []
     for i in range(maxit):
-
+        # calculate loss
+        # model_output = model.get_output_activation(data,
+        #                                            *_flatten_to_net_weights(
+        #                                                model, m1))
+        # tc = _stopping_criterion(observations, model_output.T,
+        #                          dims=dims,
+        #                          loss_function='norm')
+        # total_cost.append(tc)
         idx = np.random.randint(0, dims)
         # g_all are all model evaluations for one pass
         g_all = []
@@ -221,8 +229,8 @@ def _stopping_criterion(y, y_hat, dims, loss_function='BCE'):
     :param loss_function: name of the loss function
     :return: cost calculated according to `loss_function`
     """
-    cost = 0
-    for d in dims:
+    cost = 0.0
+    for d in range(dims):
         if loss_function == 'BCE':
             term1 = -y * np.log(y_hat[d])
             term2 = (1 - y) * np.log(1 - y_hat[d])
@@ -236,7 +244,7 @@ def _stopping_criterion(y, y_hat, dims, loss_function='BCE'):
         else:
             raise KeyError(
                 'Loss Function \'{}\' not understood.'.format(loss_function))
-    return cost
+    return cost / dims
 
 
 def _flatten_to_net_weights(model, flattened_weights):
