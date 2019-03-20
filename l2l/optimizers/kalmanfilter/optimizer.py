@@ -17,7 +17,7 @@ logger = logging.getLogger("optimizers.kalmanfilter")
 EnsembleKalmanFilterParameters = namedtuple(
     'EnsembleKalmanFilter', ['noise', 'gamma', 'tol',
                              'maxit', 'stopping_crit', 'n_iteration',
-                             'pop_size', 'shuffle', 'n_batches']
+                             'pop_size', 'shuffle', 'n_batches', 'online']
 )
 
 
@@ -33,6 +33,8 @@ EnsembleKalmanFilterParameters.__doc__ = """
 :param shuffle: bool, **True** if the data set should be shuffled. 
                 Default: True
 :param n_batches: int, Number of mini-batches to use in the Kalman Filter
+:param online: bool, Indicates if only one data point will used, 
+               Default: False
 """
 
 
@@ -115,27 +117,25 @@ class EnsembleKalmanFilter(Optimizer):
             # shifts are the ensembles
             # weights = i.weights
             # TODO change to row view
-            ens = np.array(i.shift).T
+            ens = np.array(i.shift)
             shifts_per_individual.append(ens)
-            ensemble_size = ens.shape[1]
-            if ens.ndim == 1:
-                ens = ens[np.newaxis].T
+            ensemble_size = ens.shape[0]
             # if weights.ndim == 1:
             #     weights = weights[np.newaxis]
             data_input = i.input
-            data_targets = i.targets[np.newaxis].T
+            data_targets = i.targets
             model = i.model
             results = update_enknf(data=data_input[0:100],
                                    ensemble=ens,
                                    ensemble_size=ensemble_size,
-                                   moments1=np.mean(ens, axis=1),
-                                   # moments1 = weights.mean(axis=1)
+                                   moments1=np.mean(ens, axis=0),
                                    u_exact=None,
                                    observations=data_targets[0:100],
                                    model=model, noise=traj.noise, p=None,
                                    gamma=gamma,  tol=traj.tol,
                                    maxit=traj.maxit,
-                                   stopping_crit=traj.stopping_crit)
+                                   stopping_crit=traj.stopping_crit,
+                                   online=True)
         generation_name = 'generation_{}'.format(self.g)
         traj.results.generation_params.f_add_result_group(generation_name)
         generation_result_dict = {
