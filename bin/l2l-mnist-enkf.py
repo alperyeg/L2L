@@ -112,18 +112,21 @@ def run_experiment():
     # Outer-loop optimizer initialization
     optimizer_seed = 1234
     optimizer_parameters = EnsembleKalmanFilterParameters(noise=0, gamma=0,
-                                                          tol=1e-3,
+                                                          tol=1e-5,
                                                           maxit=1000,
                                                           n_iteration=10,
                                                           stopping_crit='discrepancy',
-                                                          pop_size=1,
+                                                          pop_size=2,
                                                           n_batches=30,
-                                                          shuffle=False)
+                                                          shuffle=False,
+                                                          online=True,
+                                                          n_ensembles=99)
     logger.info("Optimizer parameters: %s", optimizer_parameters)
 
     optimizer = EnsembleKalmanFilter(traj,
                                      optimizee_create_individual=optimizee.create_individual,
                                      optimizee_fitness_weights=(1.,),
+                                     optimizee_create_new_individuals=optimizee._create_individual_distribution,
                                      parameters=optimizer_parameters,
                                      optimizee_bounding_func=optimizee.bounding_func)
 

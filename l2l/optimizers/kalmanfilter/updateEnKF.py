@@ -154,7 +154,7 @@ def update_enknf(data, ensemble, ensemble_size, moments1, u_exact,
             print('Iteration {}/{}'.format(i, maxit))
 
     # return M, E, R, AE, AR, Cpp, Cup, m1
-    return ensemble, Cpp, Cup, m1
+    return ensemble, Cpp, Cup, total_cost
 
 
 def _update_step(ensemble, observations, g,  gamma, ensemble_size, idx):
@@ -269,6 +269,20 @@ def _calculate_cost(y, y_hat, loss_function='BCE'):
     else:
         raise KeyError(
             'Loss Function \'{}\' not understood.'.format(loss_function))
+
+
+def _l1_regularization(lambda_, weights):
+    """
+    Compute L1-regularization cost.
+    """
+    return lambda_ * np.sum(np.abs(weights))
+
+
+def _l2_regularization(lambda_, weights):
+    """
+    Compute L2-regularization cost.
+    """
+    return lambda_ * np.sum(weights ** 2)
 
 
 def _flatten_to_net_weights(model, flattened_weights):

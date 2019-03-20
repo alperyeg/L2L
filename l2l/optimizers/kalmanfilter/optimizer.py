@@ -17,7 +17,8 @@ logger = logging.getLogger("optimizers.kalmanfilter")
 EnsembleKalmanFilterParameters = namedtuple(
     'EnsembleKalmanFilter', ['noise', 'gamma', 'tol',
                              'maxit', 'stopping_crit', 'n_iteration',
-                             'pop_size', 'shuffle', 'n_batches', 'online']
+                             'pop_size', 'shuffle', 'n_batches', 'online',
+                             'n_ensembles']
 )
 
 
@@ -45,17 +46,20 @@ class EnsembleKalmanFilter(Optimizer):
     def __init__(self, traj,
                  optimizee_create_individual,
                  optimizee_fitness_weights,
+                 optimizee_create_new_individuals,
                  parameters,
                  optimizee_bounding_func=None):
         super().__init__(traj,
                          optimizee_create_individual=optimizee_create_individual,
                          optimizee_fitness_weights=optimizee_fitness_weights,
                          parameters=parameters,
-                         optimizee_bounding_func=optimizee_bounding_func)
+                         optimizee_bounding_func=optimizee_bounding_func,
+                         optimizee_create_new_individuals=optimizee_create_new_individuals)
 
         self.optimizee_bounding_func = optimizee_bounding_func
         self.optimizee_create_individual = optimizee_create_individual
         self.optimizee_fitness_weights = optimizee_fitness_weights
+        self.optimizee_create_new_individuals = optimizee_create_new_individuals
         self.parameters = parameters
 
         traj.f_add_parameter('gamma', parameters.gamma, comment='Noise level')
@@ -72,6 +76,8 @@ class EnsembleKalmanFilter(Optimizer):
                              comment='Name of stopping criterion')
         traj.f_add_parameter('shuffle', parameters.shuffle)
         traj.f_add_parameter('n_batches', parameters.n_batches)
+        traj.f_add_parameter('online', parameters.online)
+        traj.f_add_parameter('n_ensembles', parameters. n_ensembles)
 
         _, self.optimizee_individual_dict_spec = dict_to_list(
             self.optimizee_create_individual(), get_dict_spec=True)
@@ -113,12 +119,12 @@ class EnsembleKalmanFilter(Optimizer):
         # works now for pop_size = 1
         shifts_per_individual = []
         gamma = traj.gamma
+        all_results = []
         for i in individuals:
             # shifts are the ensembles
             # weights = i.weights
             # TODO change to row view
             ens = np.array(i.shift)
-            shifts_per_individual.append(ens)
             ensemble_size = ens.shape[0]
             # if weights.ndim == 1:
             #     weights = weights[np.newaxis]
@@ -135,7 +141,10 @@ class EnsembleKalmanFilter(Optimizer):
                                    gamma=gamma,  tol=traj.tol,
                                    maxit=traj.maxit,
                                    stopping_crit=traj.stopping_crit,
-                                   online=True)
+                                   online=traj.online,
+                                   shuffle=traj.shuffle)
+            all_results.append(results)
+
         generation_name = 'generation_{}'.format(self.g)
         traj.results.generation_params.f_add_result_group(generation_name)
         generation_result_dict = {
@@ -146,7 +155,7 @@ class EnsembleKalmanFilter(Optimizer):
             generation_name + '.algorithm_params', generation_result_dict)
         # TODO: Set eval_pop to the values of parameters you want to evaluate
         #  in the next cycle
-        # self.eval_pop = ...
+        self.eval_pop = [self.optimizee_create_new_individuals(ind[0]) for ind in all_results]
         self._expand_trajectory(traj)
 
     def end(self, traj):

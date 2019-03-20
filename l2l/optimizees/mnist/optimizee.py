@@ -5,6 +5,7 @@ from sklearn.datasets import load_digits, fetch_mldata
 
 from l2l.optimizees.optimizee import Optimizee
 from .nn import NeuralNetworkClassifier
+from l2l.optimizers.crossentropy import distribution
 
 MNISTOptimizeeParameters = namedtuple('MNISTOptimizeeParameters', ['n_hidden', 'seed', 'use_small_mnist'])
 
@@ -42,6 +43,7 @@ class MNISTOptimizee(Optimizee):
 
         self.n_images = n_images
         self.data_images, self.data_targets = data_images, data_targets
+        self.n_ensembles = traj.n_ensembles
 
         seed = parameters.seed
         n_hidden = parameters.n_hidden
@@ -82,7 +84,7 @@ class MNISTOptimizee(Optimizee):
             self.nn.shifts.append(flattened_weights)
             # shift = self.random_state.randn(len(flattened_weights))
             # self.nn.set_shifts(shift)
-            for _ in range(99):
+            for _ in range(self.n_ensembles):
                 self.nn.get_shifts().append(
                     self.random_state.randn(len(flattened_weights)))
         # net_weights = self.flatten_to_net_weights(flattened_weights)
@@ -92,6 +94,17 @@ class MNISTOptimizee(Optimizee):
                     weights=flattened_weights, shift=self.nn.get_shifts(),
                     targets=self.data_targets,
                     input=self.data_images)
+
+    def _create_individual_distribution(self, weights):
+        # cov_mat = np.cov(weights)
+        # mean = np.mean(weights, axis=0)
+        # new_individual = np.random.multivariate_normal(mean, cov_mat)
+        dist = distribution.Gaussian()
+        dist.fit(weights)
+        new_individuals = dist.sample(self.n_ensembles)
+        return new_individuals
+
+
 
     def flatten_to_net_weights(self, flattened_weights):
         weight_shapes = self.nn.get_weights_shapes()
@@ -124,9 +137,9 @@ class MNISTOptimizee(Optimizee):
         # configure_loggers(exactly_once=True)  # logger configuration is here since this function is paralellised
         # taken care of by jube
 
-        flattened_weights = traj.individual.weights
-        shifts = traj.individual.shift
-        flattened_weights *= shifts
+        # flattened_weights = traj.individual.weights
+        flattened_weights = shifts = traj.individual.shift.mean(0)
+        # flattened_weights *= shifts
         weight_shapes = self.nn.get_weights_shapes()
 
         cumulative_num_weights_per_layer = np.cumsum([np.prod(weight_shape) for weight_shape in weight_shapes])
