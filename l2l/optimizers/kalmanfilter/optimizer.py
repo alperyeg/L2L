@@ -1,15 +1,11 @@
 import logging
+import numpy as np
+
 from collections import namedtuple
 from l2l import get_grouped_dict
 from l2l.utils.tools import cartesian_product
 from .updateEnKF import update_enknf
-
-import numpy as np
-
-from sklearn.datasets import load_digits
-
 from l2l import dict_to_list
-from l2l import list_to_dict
 from l2l.optimizers.optimizer import Optimizer
 
 logger = logging.getLogger("optimizers.kalmanfilter")
@@ -18,7 +14,7 @@ EnsembleKalmanFilterParameters = namedtuple(
     'EnsembleKalmanFilter', ['noise', 'gamma', 'tol',
                              'maxit', 'stopping_crit', 'n_iteration',
                              'pop_size', 'shuffle', 'n_batches', 'online',
-                             'n_ensembles']
+                             'seed']
 )
 
 
@@ -36,6 +32,8 @@ EnsembleKalmanFilterParameters.__doc__ = """
 :param n_batches: int, Number of mini-batches to use in the Kalman Filter
 :param online: bool, Indicates if only one data point will used, 
                Default: False
+:param seed: The random seed used to sample and fit the distribution. 
+             Uses a random generator seeded with this seed.
 """
 
 
@@ -53,8 +51,7 @@ class EnsembleKalmanFilter(Optimizer):
                          optimizee_create_individual=optimizee_create_individual,
                          optimizee_fitness_weights=optimizee_fitness_weights,
                          parameters=parameters,
-                         optimizee_bounding_func=optimizee_bounding_func,
-                         optimizee_create_new_individuals=optimizee_create_new_individuals)
+                         optimizee_bounding_func=optimizee_bounding_func)
 
         self.optimizee_bounding_func = optimizee_bounding_func
         self.optimizee_create_individual = optimizee_create_individual
@@ -77,10 +74,18 @@ class EnsembleKalmanFilter(Optimizer):
         traj.f_add_parameter('shuffle', parameters.shuffle)
         traj.f_add_parameter('n_batches', parameters.n_batches)
         traj.f_add_parameter('online', parameters.online)
-        traj.f_add_parameter('n_ensembles', parameters. n_ensembles)
+        traj.f_add_parameter('seed', np.uint32(parameters.seed),
+                             comment='Seed used for random number generation '
+                                     'in optimizer')
+        traj.f_add_parameter('pop_size', parameters.pop_size)
 
         _, self.optimizee_individual_dict_spec = dict_to_list(
             self.optimizee_create_individual(), get_dict_spec=True)
+
+        traj.results.f_add_result_group('generation_params')
+
+        # Set the random state seed for distribution
+        self.random_state = np.random.RandomState(traj.parameters.seed)
 
         #: The current generation number
         self.g = 0
@@ -92,7 +97,9 @@ class EnsembleKalmanFilter(Optimizer):
             current_eval_pop = [self.optimizee_bounding_func(ind) for ind in current_eval_pop]
 
         self.eval_pop = current_eval_pop
-        self.eval_pop_asarray = np.array([dict_to_list(x) for x in self.eval_pop])
+        # self.eval_pop_asarray = np.array([dict_to_list(x) for x in self.eval_pop])
+        self.best_fitness = 0.
+        self.best_individual = None
 
         self._expand_trajectory(traj)
 
@@ -112,50 +119,73 @@ class EnsembleKalmanFilter(Optimizer):
             It is of the form `[(run_idx, run), ...]`
 
         """
-        # NOTE: Always remember to keep the following two lines.
-        self.g += 1
+
+        # old_eval_pop = self.eval_pop.copy()
+        self.eval_pop.clear()
+
         n_iter = traj.generation
         individuals = traj.individuals[n_iter]
-        # works now for pop_size = 1
-        shifts_per_individual = []
         gamma = traj.gamma
         all_results = []
+        fitnesses = []
+        data_input = None
+        data_targets = None
+        # go over all individuals
         for i in individuals:
             # shifts are the ensembles
             # weights = i.weights
-            # TODO change to row view
             ens = np.array(i.shift)
             ensemble_size = ens.shape[0]
-            # if weights.ndim == 1:
-            #     weights = weights[np.newaxis]
             data_input = i.input
             data_targets = i.targets
-            model = i.model
-            results = update_enknf(data=data_input[0:100],
-                                   ensemble=ens,
-                                   ensemble_size=ensemble_size,
-                                   moments1=np.mean(ens, axis=0),
-                                   u_exact=None,
-                                   observations=data_targets[0:100],
-                                   model=model, noise=traj.noise, p=None,
-                                   gamma=gamma,  tol=traj.tol,
-                                   maxit=traj.maxit,
-                                   stopping_crit=traj.stopping_crit,
-                                   online=traj.online,
-                                   shuffle=traj.shuffle)
-            all_results.append(results)
+            # get the score/fitness of the individual
+            fitness_per_individual = traj.current_results[i.ind_idx][1][0]
+            fitnesses.append(fitness_per_individual)
+            if self.g > 1 and self.g % 1000 == 0:
+                continue
+            else:
+                model_output = traj.current_results[i.ind_idx][1][1]
+                new_ensembles = update_enknf(data=data_input[0:100],
+                                             ensemble=ens,
+                                             ensemble_size=ensemble_size,
+                                             moments1=np.mean(ens, axis=0),
+                                             u_exact=None,
+                                             observations=data_targets[0:100],
+                                             model_output=model_output,
+                                             noise=traj.noise,
+                                             p=None, gamma=gamma, tol=traj.tol,
+                                             maxit=traj.maxit,
+                                             stopping_crit=traj.stopping_crit,
+                                             online=traj.online,
+                                             shuffle=traj.shuffle)
+                all_results.append(new_ensembles[0])
 
         generation_name = 'generation_{}'.format(self.g)
         traj.results.generation_params.f_add_result_group(generation_name)
-        generation_result_dict = {
-            'success': []
-        }
+        fitnesses = np.array(fitnesses)
 
-        traj.results.generation_params.f_add_result(
-            generation_name + '.algorithm_params', generation_result_dict)
-        # TODO: Set eval_pop to the values of parameters you want to evaluate
-        #  in the next cycle
-        self.eval_pop = [self.optimizee_create_new_individuals(ind[0]) for ind in all_results]
+        if self.g > 1 and self.g % 1000 == 0:
+            ranking_idx = list(reversed(np.argsort(fitnesses)))
+            best_fitness = fitnesses[ranking_idx][0]
+            self.best_fitness = best_fitness
+            best_ranking_idx = ranking_idx[0]
+            self.best_individual = individuals[best_ranking_idx]
+            shifts = [
+                self.optimizee_create_new_individuals(self.random_state,
+                                                      individuals[
+                                                          best_ranking_idx].shift)
+                for _ in range(traj.pop_size)]
+
+            self.eval_pop = [dict(shift=shifts[i],
+                                  targets=data_targets,
+                                  input=data_input)
+                             for i in range(traj.pop_size)]
+        else:
+            self.eval_pop = [dict(shift=all_results[i],
+                                  targets=data_targets,
+                                  input=data_input)
+                             for i in range(traj.pop_size)]
+        self.g += 1
         self._expand_trajectory(traj)
 
     def end(self, traj):
@@ -167,7 +197,13 @@ class EnsembleKalmanFilter(Optimizer):
             param1 is accessible using `traj.param1`
 
         """
-        pass
+        best_last_indiv = self.best_individual
+
+        traj.f_add_result('final_individual', best_last_indiv)
+
+        logger.info("The last individual was %s with fitness %s",
+                    self.best_individual, self.best_fitness)
+        logger.info("-- End of (successful) gradient descent --")
 
     def _expand_trajectory(self, traj):
         """

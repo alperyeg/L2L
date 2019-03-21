@@ -1,11 +1,13 @@
 import numpy as np
 from numpy import sqrt
 from numpy.linalg import norm, inv, solve
-# from moments import moments
+
+# TODO: revise the documentation
+# TODO: clean up the code
 
 
 def update_enknf(data, ensemble, ensemble_size, moments1, u_exact,
-                 observations, model, gamma, p, noise, tol, maxit,
+                 observations, model_output, gamma, p, noise, tol, maxit,
                  stopping_crit, n_batches=32, shuffle=True, online=False):
     """
     Ensemble Kalman Filter
@@ -15,19 +17,19 @@ def update_enknf(data, ensemble, ensemble_size, moments1, u_exact,
     :param moments1: nd numpy array, first moment (mean)
     :param u_exact: nd numpy array, exact control
     :param observations: nd numpy array, noisy observation
-    :param G: nd numpy array, Model
-            `G` maps the control (dim n) into the observed data `y` (dim k),
-            inverse of `A` using `numpy.inv`
+    :param model_output: nd numpy array, output of the model.
+            In terms of the Kalman Filter the model maps the ensembles (dim n)
+            into the observed data `y` (dim k)
     :param  gamma: nd numpy array
             `noise_level * I` (I is identity matrix)
     :param p: nd numpy array
             Exact solution given by :math:`G * u_exact`, where `G` is inverse
             of a linear elliptic function `L`, it maps the control into the
             observed data, see section 5.1 of Herty2018
-    :param noise: nd numpy array, Multivariate normal distribution
+    :param noise: nd numpy array, e.g. multivariate normal distribution
     :param tol: float, tolerance for convergence
     :param maxit: int, maximum number of iteration
-        if the update step does not stop
+                  if the update step does not stop
     :param stopping_crit: str, stopping criterion,
             `discrepancy`: checks if the actual misfit is smaller or equal
             to the noise
@@ -75,7 +77,7 @@ def update_enknf(data, ensemble, ensemble_size, moments1, u_exact,
         norm_p2 = norm(p) ** 2
 
     # get shapes
-    gamma_s, dims = _get_shapes(observations, model)
+    gamma_s, dims = _get_shapes(observations, model_output)
 
     if isinstance(gamma, (int, float)):
         if float(gamma) == 0.:
@@ -110,17 +112,18 @@ def update_enknf(data, ensemble, ensemble_size, moments1, u_exact,
                 if np.abs(M[i] - M[i - 1]) < tol:
                     break
         else:
+            pass
             # calculate loss
-            model_output = model.get_output_activation(data,
-                                                       *_flatten_to_net_weights(
-                                                           model, m1))
-            cost = _calculate_cost(y=observations, y_hat=model_output.T,
-                                   loss_function='norm')
+            # model_output = model_output.get_output_activation(data,
+            #                                                   *_flatten_to_net_weights(
+            #                                                model_output, m1))
+            # cost = _calculate_cost(y=observations, y_hat=model_output.T,
+            #                        loss_function='norm')
             # check if early stopping is possible
-            if i >= 1:
-                if np.abs(total_cost[-1] - cost) <= tol:
-                    break
-            total_cost.append(cost)
+            # if i >= 1:
+            #     if np.abs(total_cost[-1] - cost) <= tol:
+            #         break
+            # total_cost.append(cost)
         # now get mini_batches
         if n_batches > dims:
             num_batches = 1
@@ -128,25 +131,23 @@ def update_enknf(data, ensemble, ensemble_size, moments1, u_exact,
             num_batches = n_batches
         mini_batches = _get_batches(num_batches, shape=dims, online=online)
         for idx in mini_batches:
-            # g_all are all model evaluations for one pass
-            g_all = []
             for l in range(ensemble_size):
-                g_all.append(model.get_output_activation(data[idx],
-                                                         *_flatten_to_net_weights(
-                                                             model,
-                                                             ensemble[l])))
                 e[l] = ensemble[l] - m1
-            g_all = np.array(g_all)
             if u_exact is not None:
                 misfit, r = _calculate_misfit(ensemble, ensemble_size, dims,
-                                              misfit, r, g_all, u_exact, noise)
-            if g_all.ndim > 2:
+                                              misfit, r, model_output
+                                              , u_exact, noise)
+
+            if not online:
                 for d in range(len(idx)):
-                    g = g_all.reshape((len(idx), dims, gamma_s))[d]
+                    # reshape first the model_output
+                    g = model_output.reshape(-1, dims, gamma_s)
+                    # now get only the individuals output according to idx
+                    g = g[idx][d]
                     ensemble = _update_step(ensemble, observations[idx], g,
                                             gamma, ensemble_size, d)
             else:
-                g = g_all
+                g = model_output.T
                 ensemble = _update_step(ensemble, observations, g, gamma,
                                         ensemble_size, idx)
         m1 = np.mean(ensemble, axis=0)
@@ -200,7 +201,7 @@ def _cov_mat(x, y, ensemble_size):
         try:
             cov = cov + np.tensordot((x[j] - x_bar), (y[j] - y_bar).T, 0)
         except IndexError:
-            cov = cov + np.tensordot((x[:, j] - x_bar), (y - y_bar).T, 0)
+            cov = cov + np.tensordot((x - x_bar), (y - y_bar).T, 0)
     cov /= ensemble_size
     return cov
 
@@ -214,7 +215,7 @@ def _get_mean(x):
     return np.mean(x, axis=0)
 
 
-def _get_shapes(observations, model):
+def _get_shapes(observations, model_output):
     """
     Returns individual shapes
 
@@ -222,7 +223,10 @@ def _get_shapes(observations, model):
                           of network)
     :returns dimensions, number of observations (and data)
     """
-    gamma_shape = model.get_weights_shapes()[1][1]
+    if model_output.ndim > 2:
+        gamma_shape = model_output.shape[1]
+    else:
+        gamma_shape = model_output.shape[0]
     dimensions = observations.shape[0]
     return gamma_shape, dimensions
 
@@ -254,16 +258,20 @@ def _calculate_cost(y, y_hat, loss_function='BCE'):
     :param y: target
     :param y_hat: calculated output (here G(u) or feed-forword output a)
     :param loss_function: name of the loss function
+           `MAE` is the Mean Absolute Error or l1 - loss
+           `MSE` is the Mean Squared Error or l2 - loss
+           `CE` cross-entropy loss, requires `y_hat` to be in [0, 1]
+           `norm` norm-2 or Forbenius norm of `y - y_hat`
     :return: cost calculated according to `loss_function`
     """
-    if loss_function == 'BCE':
+    if loss_function == 'CE':
         term1 = -y * np.log(y_hat)
         term2 = (1 - y) * np.log(1 - y_hat)
         return np.sum(term1 - term2)
     elif loss_function == 'MAE':
-        return np.sum(np.absolute(y_hat - y))
+        return np.sum(np.absolute(y_hat - y)) / len(y)
     elif loss_function == 'MSE':
-        return np.sum((y_hat - y) ** 2 / len(y))
+        return np.sum((y_hat - y) ** 2) / len(y)
     elif loss_function == 'norm':
         return norm(y - y_hat)
     else:
@@ -271,14 +279,14 @@ def _calculate_cost(y, y_hat, loss_function='BCE'):
             'Loss Function \'{}\' not understood.'.format(loss_function))
 
 
-def _l1_regularization(lambda_, weights):
+def _l1_regularization(weights, lambda_=0.1):
     """
     Compute L1-regularization cost.
     """
-    return lambda_ * np.sum(np.abs(weights))
+    return (lambda_ / 2.0) * np.sum(np.abs(weights))
 
 
-def _l2_regularization(lambda_, weights):
+def _l2_regularization(weights, lambda_=0.1):
     """
     Compute L2-regularization cost.
     """
@@ -345,7 +353,7 @@ def _shuffle(data, targets):
 def _get_batches(n_batches, shape, online):
     """
     :param n_batches, int, number of batches
-    :param dims, int, dimension of the data
+    :param shape, int, shape of the data
     :param online, bool, True if one random data point is requested,
                          between [0, dims], otherwise do mini-batch
     """

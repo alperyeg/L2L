@@ -102,7 +102,8 @@ def run_experiment():
     optimizee_seed = 123
     optimizee_parameters = MNISTOptimizeeParameters(n_hidden=10,
                                                     seed=optimizee_seed,
-                                                    use_small_mnist=True)
+                                                    use_small_mnist=True,
+                                                    n_ensembles=100)
     # Inner-loop simulator
     optimizee = MNISTOptimizee(traj, optimizee_parameters)
     jube.prepare_optimizee(optimizee, root_dir_path)
@@ -113,14 +114,14 @@ def run_experiment():
     optimizer_seed = 1234
     optimizer_parameters = EnsembleKalmanFilterParameters(noise=0, gamma=0,
                                                           tol=1e-5,
-                                                          maxit=1000,
-                                                          n_iteration=10,
+                                                          maxit=1,
+                                                          n_iteration=1,
                                                           stopping_crit='discrepancy',
-                                                          pop_size=2,
+                                                          pop_size=1,
                                                           n_batches=30,
                                                           shuffle=False,
-                                                          online=True,
-                                                          n_ensembles=99)
+                                                          online=False,
+                                                          seed=1234)
     logger.info("Optimizer parameters: %s", optimizer_parameters)
 
     optimizer = EnsembleKalmanFilter(traj,
