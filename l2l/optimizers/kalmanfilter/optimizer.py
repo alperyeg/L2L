@@ -14,7 +14,7 @@ EnsembleKalmanFilterParameters = namedtuple(
     'EnsembleKalmanFilter', ['noise', 'gamma', 'tol',
                              'maxit', 'stopping_crit', 'n_iteration',
                              'pop_size', 'shuffle', 'n_batches', 'online',
-                             'seed']
+                             'epsilon', 'decay_rate', 'seed']
 )
 
 
@@ -32,6 +32,18 @@ EnsembleKalmanFilterParameters.__doc__ = """
 :param n_batches: int, Number of mini-batches to use in the Kalman Filter
 :param online: bool, Indicates if only one data point will used, 
                Default: False
+:param epsilon: float, A value which is used when sampling from the best individual. 
+                The value is multiplied to the covariance matrix as follows:
+                :math:`\\epsilon * I` where I is the identity matrix with the 
+                same size as the covariance matrix. The value is 
+                exponentially decaying and should be in [0,1] and used in 
+                combination with `decay_rate`. 
+:param decay_rate: float, Decay rate for the sampling. 
+                For the exponential decay as follows:
+                .. math::
+                    \\epsilon = \\epsilon_0 e^{-decay_rate * epoch}
+                    
+                Where :math:`\\epsilon` is the value from `epsilon`. The
 :param seed: The random seed used to sample and fit the distribution. 
              Uses a random generator seeded with this seed.
 """
@@ -74,6 +86,8 @@ class EnsembleKalmanFilter(Optimizer):
         traj.f_add_parameter('shuffle', parameters.shuffle)
         traj.f_add_parameter('n_batches', parameters.n_batches)
         traj.f_add_parameter('online', parameters.online)
+        traj.f_add_parameter('epsilon', parameters.epsilon)
+        traj.f_add_parameter('decay_rate', parameters.decay_rate)
         traj.f_add_parameter('seed', np.uint32(parameters.seed),
                              comment='Seed used for random number generation '
                                      'in optimizer')
@@ -89,6 +103,12 @@ class EnsembleKalmanFilter(Optimizer):
 
         #: The current generation number
         self.g = 0
+        # for the sampling procedure
+        # `epsilon` value given by the user
+        self.epsilon = parameters.epsilon
+        # decay rate
+        self.decay_rate = parameters.decay_rate
+
         #: The population (i.e. list of individuals) to be evaluated at the
         # next iteration
         current_eval_pop = [self.optimizee_create_individual() for _ in range(parameters.pop_size)]
@@ -141,24 +161,21 @@ class EnsembleKalmanFilter(Optimizer):
             # get the score/fitness of the individual
             fitness_per_individual = traj.current_results[i.ind_idx][1][0]
             fitnesses.append(fitness_per_individual)
-            if self.g > 1 and self.g % 1000 == 0:
-                continue
-            else:
-                model_output = traj.current_results[i.ind_idx][1][1]
-                new_ensembles = update_enknf(data=data_input[0:100],
-                                             ensemble=ens,
-                                             ensemble_size=ensemble_size,
-                                             moments1=np.mean(ens, axis=0),
-                                             u_exact=None,
-                                             observations=data_targets[0:100],
-                                             model_output=model_output,
-                                             noise=traj.noise,
-                                             p=None, gamma=gamma, tol=traj.tol,
-                                             maxit=traj.maxit,
-                                             stopping_crit=traj.stopping_crit,
-                                             online=traj.online,
-                                             shuffle=traj.shuffle)
-                all_results.append(new_ensembles[0])
+            model_output = traj.current_results[i.ind_idx][1][1]
+            new_ensembles = update_enknf(data=data_input[0:100],
+                                         ensemble=ens,
+                                         ensemble_size=ensemble_size,
+                                         moments1=np.mean(ens, axis=0),
+                                         u_exact=None,
+                                         observations=data_targets[0:100],
+                                         model_output=model_output,
+                                         noise=traj.noise,
+                                         p=None, gamma=gamma, tol=traj.tol,
+                                         maxit=traj.maxit,
+                                         stopping_crit=traj.stopping_crit,
+                                         online=traj.online,
+                                         shuffle=traj.shuffle)
+            all_results.append(new_ensembles[0])
 
         generation_name = 'generation_{}'.format(self.g)
         traj.results.generation_params.f_add_result_group(generation_name)
@@ -170,10 +187,14 @@ class EnsembleKalmanFilter(Optimizer):
             self.best_fitness = best_fitness
             best_ranking_idx = ranking_idx[0]
             self.best_individual = individuals[best_ranking_idx]
+            # do the decay
+            eps = self.epsilon * np.exp(-self.decay_rate * self.g)
+            # now do the sampling
             shifts = [
                 self.optimizee_create_new_individuals(self.random_state,
                                                       individuals[
-                                                          best_ranking_idx].shift)
+                                                          best_ranking_idx].shift,
+                                                      eps)
                 for _ in range(traj.pop_size)]
 
             self.eval_pop = [dict(shift=shifts[i],

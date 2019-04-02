@@ -115,12 +115,14 @@ def run_experiment():
     optimizer_parameters = EnsembleKalmanFilterParameters(noise=0, gamma=0,
                                                           tol=1e-5,
                                                           maxit=1,
-                                                          n_iteration=1,
+                                                          n_iteration=2,
                                                           stopping_crit='discrepancy',
                                                           pop_size=1,
                                                           n_batches=30,
                                                           shuffle=False,
                                                           online=False,
+                                                          epsilon=0.1,
+                                                          decay_rate=0.001,
                                                           seed=1234)
     logger.info("Optimizer parameters: %s", optimizer_parameters)
 

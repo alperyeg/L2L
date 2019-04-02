@@ -91,13 +91,10 @@ class MNISTOptimizee(Optimizee):
                     targets=self.data_targets,
                     input=self.data_images)
 
-    def _create_individual_distribution(self, random_state, weights):
-        # cov_mat = np.cov(weights)
-        # mean = np.mean(weights, axis=0)
-        # new_individual = np.random.multivariate_normal(mean, cov_mat)
+    def _create_individual_distribution(self, random_state, weights, epsilon=0):
         dist = distribution.Gaussian()
         dist.init_random_state(random_state)
-        dist.fit(weights)
+        dist.fit(weights, epsilon)
         new_individuals = dist.sample(self.n_ensembles)
         return new_individuals
 

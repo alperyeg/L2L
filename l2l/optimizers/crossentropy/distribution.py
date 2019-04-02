@@ -73,13 +73,16 @@ class Gaussian(Distribution):
         params_dict_items = [("distribution_name", self.__class__.__name__)]
         return dict(params_dict_items)
 
-    def fit(self, data_list, smooth_update=0):
+    def fit(self, data_list, smooth_update=0, epsilon=0.0):
         """
         Fit a gaussian distribution to the given data
 
         :param data_list: list or numpy array with individuals as rows
         :param smooth_update: determines to which extent the new samples account for the new distribution.
           default is 0 -> old parameters are fully discarded
+        :param epsilon: float, A non-zero value is added on the diagonal of the
+            covariance matrix, to spread the distribution to explore
+            other local minima.
         
         :return dict: specifying current parametrization
         """
@@ -96,6 +99,9 @@ class Gaussian(Distribution):
 
         self.mean = smooth_update * self.mean + (1 - smooth_update) * mean
         self.cov = smooth_update * self.cov + (1 - smooth_update) * cov_mat
+
+        if epsilon != 0.0:
+            self.cov += epsilon * np.eye(self.cov.shape[0])
 
         logger.debug('Gaussian center\n%s', self.mean)
         logger.debug('Gaussian cov\n%s', self.cov)

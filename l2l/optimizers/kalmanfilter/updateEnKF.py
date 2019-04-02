@@ -82,7 +82,7 @@ def update_enknf(data, ensemble, ensemble_size, moments1, u_exact,
     if isinstance(gamma, (int, float)):
         if float(gamma) == 0.:
             gamma = np.eye(gamma_s)
-    # sqrt_inv_gamma = sqrt(inv(gamma))
+    sqrt_inv_gamma = sqrt(inv(gamma))
 
     Cpp = None
     Cup = None
@@ -95,15 +95,18 @@ def update_enknf(data, ensemble, ensemble_size, moments1, u_exact,
 
     total_cost = []
     for i in range(maxit):
+        if (i % 100) == 0:
+            print('Iteration {}/{}'.format(i, maxit))
         if shuffle:
             data, observations = _shuffle(data, observations)
 
         # check for early stopping
-        # _convergence(norm_uexact2=norm_uexact2,
-        #              norm_p2=norm_p2,
-        #              sqrt_inv_gamma=sqrt_inv_gamma,
-        #              ensemble_size=ensemble_size, G=g_all, m1=m1, M=M, E=E,
-        #              R=R, AE=AE, AR=AR, e=e, r=r, misfit=misfit)
+        _convergence(norm_uexact2=norm_uexact2,
+                     norm_p2=norm_p2,
+                     sqrt_inv_gamma=sqrt_inv_gamma,
+                     ensemble_size=ensemble_size, G=model_output, m1=m1, M=M,
+                     E=E,
+                     R=R, AE=AE, AR=AR, e=e, r=r, misfit=misfit)
         if stopping_crit == 'discrepancy' and noise > 0:
             if M[i] <= np.linalg.norm(noise, 2) ** 2:
                 break
@@ -134,31 +137,32 @@ def update_enknf(data, ensemble, ensemble_size, moments1, u_exact,
             for l in range(ensemble_size):
                 e[l] = ensemble[l] - m1
             if u_exact is not None:
-                misfit, r = _calculate_misfit(ensemble, ensemble_size, dims,
-                                              misfit, r, model_output
-                                              , u_exact, noise)
+                misfit[:, :, idx], r = _calculate_misfit(ensemble,
+                                                         ensemble_size,
+                                                         misfit[:, :, idx], r,
+                                                         model_output[:,
+                                                                      :, idx],
+                                                         u_exact, noise)
+            # in case of online learning idx should be an int
+            # put it into a list to loop over it
+            if not isinstance(idx, np.ndarray):
+                idx = [idx]
 
-            if not online:
-                for d in range(len(idx)):
-                    # reshape first the model_output
-                    g = model_output.reshape(-1, dims, gamma_s)
-                    # now get only the individuals output according to idx
-                    g = g[idx][d]
-                    ensemble = _update_step(ensemble, observations[idx], g,
-                                            gamma, ensemble_size, d)
-            else:
-                g = model_output.T
-                ensemble = _update_step(ensemble, observations, g, gamma,
-                                        ensemble_size, idx)
+            # reshape first the model_output
+            # to ensembles x examples x output
+            # g = model_output.reshape(-1, dims, gamma_s)
+            for d in idx:
+                # now get only the individuals output according to idx
+                g_tmp = model_output[:, :, d]
+                ensemble = _update_step(ensemble, observations[d],
+                                        g_tmp, gamma, ensemble_size)
+
         m1 = np.mean(ensemble, axis=0)
-        if (i % 100) == 0:
-            print('Iteration {}/{}'.format(i, maxit))
-
     # return M, E, R, AE, AR, Cpp, Cup, m1
     return ensemble, Cpp, Cup, total_cost
 
 
-def _update_step(ensemble, observations, g,  gamma, ensemble_size, idx):
+def _update_step(ensemble, observations, g,  gamma, ensemble_size):
     """
     Update step of the kalman filter
     Calculates the covariances and returns new ensembles
@@ -168,7 +172,7 @@ def _update_step(ensemble, observations, g,  gamma, ensemble_size, idx):
     Cpp = _cov_mat(g, g, ensemble_size)
     for j in range(ensemble_size):
         # create one hot vector
-        target = observations[idx]
+        target = observations
         tmp = solve(Cpp + gamma, target - g[j])
         ensemble[j] = ensemble[j] + (Cup @ tmp)
     return ensemble
@@ -196,7 +200,7 @@ def _cov_mat(x, y, ensemble_size):
     x_bar = _get_mean(x)
     y_bar = _get_mean(y)
 
-    cov = np.zeros((x.shape[1], y.shape[1]))
+    cov = 0.0
     for j in range(ensemble_size):
         try:
             cov = cov + np.tensordot((x[j] - x_bar), (y[j] - y_bar).T, 0)
@@ -312,19 +316,21 @@ def _flatten_to_net_weights(model, flattened_weights):
     return weights
 
 
-def _calculate_misfit(ensemble, ensemble_size, dims, misfit, r, g_all, u_exact,
+def _calculate_misfit(ensemble, ensemble_size, misfit, r, g_all, u_exact,
                       noise):
     """
     Calculates and returns the misfit and the deviation from the true solution
     """
-    for d in range(dims):
-        if dims >= 2:
-            g = g_all[d]
-        else:
-            g = g_all
-        for l in range(ensemble_size):
-            r[:, l] = ensemble[:, l] - u_exact
-            misfit[:, l] = g[:, l] * r[l, 0] - noise
+    for d in range(ensemble_size):
+        r[d] = ensemble[d] - u_exact
+        misfit[d] = g_all[d] * r[d, 0] - noise
+        # if len(g_all) >= 2:
+        #     g = g_all[d]
+        # else:
+        #     g = g_all
+        # for l in range(ensemble_size):
+        #     r[l] = ensemble[l] - u_exact
+        #     misfit[d][l] = g[l] * r[l, 0] - noise
     return misfit, r
 
 
