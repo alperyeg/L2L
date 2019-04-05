@@ -162,12 +162,12 @@ class EnsembleKalmanFilter(Optimizer):
             fitness_per_individual = traj.current_results[i.ind_idx][1][0]
             fitnesses.append(fitness_per_individual)
             model_output = traj.current_results[i.ind_idx][1][1]
-            new_ensembles = update_enknf(data=data_input[0:100],
+            new_ensembles = update_enknf(data=data_input,
                                          ensemble=ens,
                                          ensemble_size=ensemble_size,
                                          moments1=np.mean(ens, axis=0),
                                          u_exact=None,
-                                         observations=data_targets[0:100],
+                                         observations=data_targets,
                                          model_output=model_output,
                                          noise=traj.noise,
                                          p=None, gamma=gamma, tol=traj.tol,
