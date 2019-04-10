@@ -3,33 +3,39 @@ from numpy import sqrt
 from numpy.linalg import norm, inv, solve
 
 # TODO: revise the documentation
+# TODO total cost, documentation and make it as an argument
 # TODO: clean up the code
+# TODO: refactor to class
 
 
-def update_enknf(data, ensemble, ensemble_size, moments1, u_exact,
-                 observations, model_output, gamma, p, noise, tol, maxit,
-                 stopping_crit, n_batches=32, shuffle=True, online=False):
+def update_enknf(data, ensemble, ensemble_size, moments1,
+                 observations, model_output, gamma, p, tol, maxit,
+                 stopping_crit, n_batches=32, noise=0., 
+                 shuffle=True, online=False, u_exact=None):
     """
     Ensemble Kalman Filter
 
     :param ensemble: nd numpy array, contains the calculated ensembles u
     :param ensemble_size: int, number of ensembles
     :param moments1: nd numpy array, first moment (mean)
-    :param u_exact: nd numpy array, exact control
-    :param observations: nd numpy array, noisy observation
+    :param u_exact: nd numpy array, exact control, e.g. if weight sof the model
+                   are known. Default is `None`
+    :param observations: nd numpy array, observation or targets
     :param model_output: nd numpy array, output of the model.
             In terms of the Kalman Filter the model maps the ensembles (dim n)
-            into the observed data `y` (dim k)
-    :param  gamma: nd numpy array
-            `noise_level * I` (I is identity matrix)
+            into the observed data `y` (dim k). E.g. network output activity
+    :param noise: nd numpy array, Noise can be added to the model (for `gamma`) 
+            and is used in the misfit calculation for convergence. 
+            E.g. multivariate normal distribution. Default is `0.0`
+    :param  gamma: nd numpy array, Normalizes the model-data distance in the 
+            update step, :`noise * I` (I is identity matrix) or 
+            :math:`\gamma=I` if `noise` is zero
     :param p: nd numpy array
             Exact solution given by :math:`G * u_exact`, where `G` is inverse
             of a linear elliptic function `L`, it maps the control into the
             observed data, see section 5.1 of Herty2018
-    :param noise: nd numpy array, e.g. multivariate normal distribution
-    :param tol: float, tolerance for convergence
-    :param maxit: int, maximum number of iteration
-                  if the update step does not stop
+    :param tol: float, tolerance value for convergence
+    :param maxit: int, maximum number of iterations
     :param stopping_crit: str, stopping criterion,
             `discrepancy`: checks if the actual misfit is smaller or equal
             to the noise
@@ -42,6 +48,10 @@ def update_enknf(data, ensemble, ensemble_size, moments1, u_exact,
     :param online, bool, True if one random data point is requested,
                          between [0, dims], otherwise do mini-batch
     :return:
+        ensembles: nd numpy array, optimized `ensembles`
+        Cpp: nd numpy array, covariance matrix of the model output
+        Cup: nd numpy array, covariance matrix of the model output and the 
+             ensembles 
         M: nd numpy array, Misfit
             Measures the quality of the solution at each iteration,
             see (Herty2018 eq.30 and eq.31)
