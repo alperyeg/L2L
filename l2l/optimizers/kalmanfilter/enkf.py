@@ -134,9 +134,6 @@ class EnsembleKalmanFilter(KalmanFilter):
                 if not isinstance(idx, np.ndarray):
                     idx = [idx]
 
-                # reshape first the model_output
-                # to ensembles x examples x output
-                # g = model_output.reshape(-1, dims, gamma_s)
                 for d in idx:
                     # now get only the individuals output according to idx
                     g_tmp = model_output[:, :, d]
@@ -309,13 +306,6 @@ def _calculate_misfit(ensemble, ensemble_size, misfit, r, g_all, u_exact,
     for d in range(ensemble_size):
         r[d] = ensemble[d] - u_exact
         misfit[d] = g_all[d] * r[d, 0] - noise
-        # if len(g_all) >= 2:
-        #     g = g_all[d]
-        # else:
-        #     g = g_all
-        # for l in range(ensemble_size):
-        #     r[l] = ensemble[l] - u_exact
-        #     misfit[d][l] = g[l] * r[l, 0] - noise
     return misfit, r
 
 
