@@ -14,11 +14,14 @@ from l2l.optimizers.crossentropy import distribution
 
 MNISTOptimizeeParameters = namedtuple('MNISTOptimizeeParameters', ['n_hidden',
                                                                    'seed', 'use_small_mnist',
-                                                                   'n_ensembles'])
+                                                                   'n_ensembles',
+                                                                   'root',
+                                                                   'batch_size'])
 
 MnistFashionOptimizeeParameters = namedtuple('MnistFashionOptimizeeParameters',
                                              ['seed',
-                                              'n_ensembles'])
+                                              'n_ensembles', 'root',
+                                              'batch_size'])
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
@@ -32,6 +35,8 @@ class MnistFashionOptimizee(Optimizee):
         self.random_state = np.random.RandomState(seed=seed)
 
         self.n_ensembles = parameters.n_ensembles
+        self.batch_size = parameters.batch_size
+        self.root = parameters.root
 
         self.conv_net = ConvNet().to(device)
         self.mlp_net = MLPNet().to(device)
@@ -71,20 +76,6 @@ class MnistFashionOptimizee(Optimizee):
 
             ensembles.append(params)
             for _ in range(self.n_ensembles - 1):
-                # ensembles.append(np.hstack((
-                #     torch.nn.init.xavier_uniform_(
-                #         self.conv_net.state_dict()['conv1.weight']).view(-1).numpy(),
-                #     torch.nn.init.uniform_(
-                #         self.conv_net.state_dict()['conv1.bias']).view(-1).numpy(),
-                #     torch.nn.init.xavier_uniform_(
-                #         self.conv_net.state_dict()['conv2.weight']).view(-1).numpy(),
-                #     torch.nn.init.uniform_(
-                #         self.conv_net.state_dict()['conv2.bias']).view(-1).numpy(),
-                #     torch.nn.init.xavier_uniform_(
-                #         self.conv_net.state_dict()['fc1.weight']).view(-1).numpy(),
-                #     torch.nn.init.uniform_(
-                #         self.conv_net.state_dict()['fc1.bias']).view(-1).numpy()
-                # )))
                 ensembles.append(
                     np.hstack((
                         self._he_init(self.conv_net.state_dict()['conv1.weight']),
@@ -107,10 +98,10 @@ class MnistFashionOptimizee(Optimizee):
         He- or Kaiming- initialization as in He et al., "Delving deep into
         rectifiers: Surpassing human-level performance on ImageNet
         classification". Values are sampled from
-        :math:`\mathcal{N}(0, \text{std})` where
+        :math:`\\mathcal{N}(0, \\text{std})` where
 
         .. math::
-        \text{std} = \sqrt{\frac{2}{(1 + a^2) \times \text{fan\_in}}}
+        \text{std} = \\sqrt{\\frac{2}{(1 + a^2) \\times \text{fan\\_in}}}
 
         Note: Only for the case that the non-linearity of the network
             activation is `relu`
@@ -130,46 +121,42 @@ class MnistFashionOptimizee(Optimizee):
         new_individuals = dist.sample(self.n_ensembles)
         return new_individuals
 
-    @staticmethod
-    def load_data():
+    def load_data(self):
         transform = transforms.Compose(
             [transforms.ToTensor(),
              transforms.Normalize([0.5], [0.5])])
 
-        # TODO make root as an argument within `parameters`, batch_size too
-        root = '/home/yegenoglu/Documents/toolbox/L2L/l2l/optimizees/multitask'
-
-        trainset_fashion = torchvision.datasets.FashionMNIST(root=root,
+        trainset_fashion = torchvision.datasets.FashionMNIST(root=self.root,
                                                              train=True,
                                                              download=True,
                                                              transform=transform)
         trainloader_fashion = torch.utils.data.DataLoader(trainset_fashion,
-                                                          batch_size=1,
+                                                          batch_size=self.batch_size,
                                                           shuffle=True,
                                                           num_workers=2)
 
-        testset_fashion = torchvision.datasets.FashionMNIST(root=root,
+        testset_fashion = torchvision.datasets.FashionMNIST(root=self.root,
                                                             train=False,
                                                             download=True,
                                                             transform=transform)
         testload_fashion = torch.utils.data.DataLoader(testset_fashion,
-                                                       batch_size=1,
+                                                       batch_size=self.batch_size,
                                                        shuffle=False,
                                                        num_workers=2)
         # load now MNIST dataset
-        trainset_mnist = torchvision.datasets.MNIST(root=root, train=True,
+        trainset_mnist = torchvision.datasets.MNIST(root=self.root, train=True,
                                                     download=True,
                                                     transform=transform)
         trainloader_mnist = torch.utils.data.DataLoader(trainset_mnist,
-                                                        batch_size=1,
+                                                        batch_size=self.batch_size,
                                                         shuffle=True,
                                                         num_workers=2)
 
-        testset_mnist = torchvision.datasets.MNIST(root=root, train=False,
+        testset_mnist = torchvision.datasets.MNIST(root=self.root, train=False,
                                                    download=True,
                                                    transform=transform)
         testload_mnist = torch.utils.data.DataLoader(testset_mnist,
-                                                     batch_size=1,
+                                                     batch_size=self.batch_size,
                                                      shuffle=False,
                                                      num_workers=2)
         dataiter_fashion = iter(trainloader_fashion)
