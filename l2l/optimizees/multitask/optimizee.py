@@ -66,10 +66,10 @@ class MnistFashionOptimizee(Optimizee):
             # stack everything into a vector of
             # conv1_weights, conv1_bias, conv2_weights, conv2_bias,
             # fc1_weights, fc1_bias
-            weights = np.hstack((conv1_weights, conv1_bias, conv2_weights,
+            params = np.hstack((conv1_weights, conv1_bias, conv2_weights,
                                  conv2_bias, fc1_weights, fc1_bias))
 
-            ensembles.append(weights)
+            ensembles.append(params)
             for _ in range(self.n_ensembles - 1):
                 # ensembles.append(np.hstack((
                 #     torch.nn.init.xavier_uniform_(
@@ -85,11 +85,43 @@ class MnistFashionOptimizee(Optimizee):
                 #     torch.nn.init.uniform_(
                 #         self.conv_net.state_dict()['fc1.bias']).view(-1).numpy()
                 # )))
-                ensembles.append(np.random.uniform(-1, 1, len(weights)))
+                ensembles.append(
+                    np.hstack((
+                        self._he_init(self.conv_net.state_dict()['conv1.weight']),
+                        np.random.normal(self.conv_net.state_dict()['conv1.bias'].view(-1).numpy()),
+                        self._he_init(self.conv_net.state_dict()['conv2.weight']),
+                        np.random.normal(self.conv_net.state_dict()['conv2.bias'].view(-1).numpy()),
+                        self._he_init(self.conv_net.state_dict()['fc1.weight']),
+                        np.random.normal(self.conv_net.state_dict()['fc1.bias'].view(-1).numpy()),
+                    ))
+                )
+                # ensembles.append(np.random.uniform(-1, 1, len(params)))
             ensembles = np.array(ensembles)
             return dict(shift=ensembles,
                         targets=self.labels.numpy(),
                         input=self.inputs.squeeze().numpy())
+
+    @staticmethod
+    def _he_init(weights, gain=0):
+        """
+        He- or Kaiming- initialization as in He et al., "Delving deep into
+        rectifiers: Surpassing human-level performance on ImageNet
+        classification". Values are sampled from
+        :math:`\mathcal{N}(0, \text{std})` where
+
+        .. math::
+        \text{std} = \sqrt{\frac{2}{(1 + a^2) \times \text{fan\_in}}}
+
+        Note: Only for the case that the non-linearity of the network
+            activation is `relu`
+
+        :param weights, tensor
+        :param gain, additional scaling factor, Default is 0
+        :return: numpy nd array, random array of size `weights`
+        """
+        fan_in = torch.nn.init._calculate_correct_fan(weights, 'fan_in')
+        stddev = np.sqrt(2. / fan_in * (1 + gain ** 2))
+        return stddev * np.random.randn(weights.numel())
 
     def _create_individual_distribution(self, random_state, weights, epsilon=0):
         dist = distribution.Gaussian()
