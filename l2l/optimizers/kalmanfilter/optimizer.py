@@ -4,7 +4,7 @@ import numpy as np
 from collections import namedtuple
 from l2l import get_grouped_dict
 from l2l.utils.tools import cartesian_product
-from .updateEnKF import update_enknf
+from .enkf import EnsembleKalmanFilter as EnKF
 from l2l import dict_to_list
 from l2l.optimizers.optimizer import Optimizer
 
@@ -162,20 +162,18 @@ class EnsembleKalmanFilter(Optimizer):
             fitness_per_individual = traj.current_results[i.ind_idx][1][0]
             fitnesses.append(fitness_per_individual)
             model_output = traj.current_results[i.ind_idx][1][1]
-            new_ensembles = update_enknf(data=data_input,
-                                         ensemble=ens,
-                                         ensemble_size=ensemble_size,
-                                         moments1=np.mean(ens, axis=0),
-                                         u_exact=None,
-                                         observations=data_targets,
-                                         model_output=model_output,
-                                         noise=traj.noise,
-                                         p=None, gamma=gamma, tol=traj.tol,
-                                         maxit=traj.maxit,
-                                         stopping_crit=traj.stopping_crit,
-                                         online=traj.online,
-                                         shuffle=traj.shuffle)
-            all_results.append(new_ensembles[0])
+            enkf = EnKF(tol=traj.tol, maxit=traj.maxit,
+                        stopping_crit=traj.stopping_crit, shuffle=traj.shuffle,
+                        online=traj.online, n_batches=traj.n_batches)
+            enkf.fit(data=data_input,
+                     ensemble=ens,
+                     ensemble_size=ensemble_size,
+                     moments1=np.mean(ens, axis=0),
+                     u_exact=None,
+                     observations=data_targets,
+                     model_output=model_output,
+                     noise=traj.noise, p=None, gamma=gamma)
+            all_results.append(enkf.ensemble)
 
         generation_name = 'generation_{}'.format(self.g)
         traj.results.generation_params.f_add_result_group(generation_name)
