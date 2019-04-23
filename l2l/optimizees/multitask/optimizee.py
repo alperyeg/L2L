@@ -72,7 +72,7 @@ class MnistFashionOptimizee(Optimizee):
             # conv1_weights, conv1_bias, conv2_weights, conv2_bias,
             # fc1_weights, fc1_bias
             params = np.hstack((conv1_weights, conv1_bias, conv2_weights,
-                                 conv2_bias, fc1_weights, fc1_bias))
+                                conv2_bias, fc1_weights, fc1_bias))
 
             ensembles.append(params)
             for _ in range(self.n_ensembles - 1):
@@ -215,11 +215,11 @@ class MnistFashionOptimizee(Optimizee):
         # create the parameter dict
         param_dict = {
             'conv1_w': params[:conv1_w_l].reshape(conv1_w_shape),
-             'conv1_b': params[conv1_w_l:conv1_b_l].reshape(conv1_b_shape),
-             'conv2_w': params[conv1_b_l:conv2_w_l].reshape(conv2_w_shape),
-             'conv2_b': params[conv2_w_l:conv2_b_l].reshape(conv2_b_shape),
-             'fc1_w': params[conv2_b_l:fc1_w_l].reshape(fc1_w_shape),
-             'fc1_b': params[fc1_w_l:fc1_b_l].reshape(fc1_b_shape)
+            'conv1_b': params[conv1_w_l:conv1_b_l].reshape(conv1_b_shape),
+            'conv2_w': params[conv1_b_l:conv2_w_l].reshape(conv2_w_shape),
+            'conv2_b': params[conv2_w_l:conv2_b_l].reshape(conv2_b_shape),
+            'fc1_w': params[conv2_b_l:fc1_w_l].reshape(fc1_w_shape),
+            'fc1_b': params[fc1_w_l:fc1_b_l].reshape(fc1_b_shape)
         }
         return param_dict
 
@@ -249,4 +249,3 @@ class MnistFashionOptimizee(Optimizee):
             'lin3_b': params[lin3_w_l:lin3_b_l].reshape(lin3_b_shape)
         }
         return param_dict
-
