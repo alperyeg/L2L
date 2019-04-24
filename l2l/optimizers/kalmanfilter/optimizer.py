@@ -118,8 +118,10 @@ class EnsembleKalmanFilter(Optimizer):
 
         self.eval_pop = current_eval_pop
         # self.eval_pop_asarray = np.array([dict_to_list(x) for x in self.eval_pop])
-        self.best_fitness = 0.
-        self.best_individual = None
+        self.best_fitness_conv = 0.
+        self.best_individual_conv = None
+        self.best_fitness_mlp = 0.
+        self.best_individual_mlp = None
 
         self._expand_trajectory(traj)
 
@@ -146,22 +148,23 @@ class EnsembleKalmanFilter(Optimizer):
         n_iter = traj.generation
         individuals = traj.individuals[n_iter]
         gamma = traj.gamma
-        all_results = []
-        fitnesses = []
+        conv_ensembles = []
+        mlp_ensembles = []
+        conv_fitnesses = []
+        mlp_fitnesses = []
         data_input = None
         data_targets = None
         # go over all individuals
         for i in individuals:
-            # shifts are the ensembles
-            # weights = i.weights
-            ens = np.array(i.shift)
+            # conv net optimization
+            ens = np.array(i.conv_params)
             ensemble_size = ens.shape[0]
             data_input = i.input
             data_targets = i.targets
             # get the score/fitness of the individual
-            fitness_per_individual = traj.current_results[i.ind_idx][1][0]
-            fitnesses.append(fitness_per_individual)
-            model_output = traj.current_results[i.ind_idx][1][1]
+            fitness_per_individual = traj.current_results[i.ind_idx][1]['conv_loss']
+            conv_fitnesses.append(fitness_per_individual)
+            model_output = traj.current_results[i.ind_idx][1]['conv_params']
             enkf = EnKF(tol=traj.tol, maxit=traj.maxit,
                         stopping_crit=traj.stopping_crit, shuffle=traj.shuffle,
                         online=traj.online, n_batches=traj.n_batches)
@@ -173,39 +176,74 @@ class EnsembleKalmanFilter(Optimizer):
                      observations=data_targets,
                      model_output=model_output,
                      noise=traj.noise, p=None, gamma=gamma)
-            all_results.append(enkf.ensemble)
+            conv_ensembles.append(enkf.ensemble)
+
+            ens = np.array(i.mlp_params)
+            model_output = traj.current_results[i.ind_idx][1]['mlp_params']
+            fitness_per_individual = traj.current_results[i.ind_idx][1]['mlp_loss']
+            mlp_fitnesses.append(fitness_per_individual)
+            enkf.fit(data=data_input,
+                     ensemble=ens,
+                     ensemble_size=ensemble_size,
+                     moments1=np.mean(ens, axis=0),
+                     u_exact=None,
+                     observations=data_targets,
+                     model_output=model_output,
+                     noise=traj.noise, p=None, gamma=gamma)
+            mlp_ensembles.append(enkf.ensemble)
 
         generation_name = 'generation_{}'.format(self.g)
         traj.results.generation_params.f_add_result_group(generation_name)
-        fitnesses = np.array(fitnesses)
+        conv_fitnesses = np.array(conv_fitnesses)
+        mlp_fitnesses = np.array(mlp_fitnesses)
 
         if self.g > 1 and self.g % 1000 == 0:
-            ranking_idx = list(reversed(np.argsort(fitnesses)))
-            best_fitness = fitnesses[ranking_idx][0]
-            self.best_fitness = best_fitness
-            best_ranking_idx = ranking_idx[0]
-            self.best_individual = individuals[best_ranking_idx]
-            # do the decay
-            eps = self.epsilon * np.exp(-self.decay_rate * self.g)
-            # now do the sampling
-            shifts = [
-                self.optimizee_create_new_individuals(self.random_state,
-                                                      individuals[
-                                                          best_ranking_idx].shift,
-                                                      eps)
-                for _ in range(traj.pop_size)]
-
-            self.eval_pop = [dict(shift=shifts[i],
+            conv_params, self.best_fitness_conv, self.best_individual_conv = self._new_individuals(
+                traj, conv_fitnesses, individuals, 'conv')
+            mlp_params, self.best_fitness_mlp, self.best_individual_mlp = self._new_individuals(
+                traj, mlp_fitnesses, individuals, 'mlp')
+            self.eval_pop = [dict(conv_params=conv_params[i],
+                                  mlp_params=mlp_params[i],
                                   targets=data_targets,
                                   input=data_input)
                              for i in range(traj.pop_size)]
         else:
-            self.eval_pop = [dict(shift=all_results[i],
+            self.eval_pop = [dict(conv_params=conv_ensembles[i],
+                                  mlp_params=mlp_ensembles[i],
                                   targets=data_targets,
                                   input=data_input)
                              for i in range(traj.pop_size)]
         self.g += 1
         self._expand_trajectory(traj)
+
+    def _new_individuals(self, traj, fitnesses, individuals, net):
+        """
+        Sample new individuals by first ranking and then sampling from a
+        gaussian distribution. The
+        """
+        ranking_idx = list(reversed(np.argsort(fitnesses)))
+        best_fitness = fitnesses[ranking_idx][0]
+        best_ranking_idx = ranking_idx[0]
+        best_individual = individuals[best_ranking_idx]
+        # do the decay
+        eps = self.epsilon * np.exp(-self.decay_rate * self.g)
+        params = []
+        # now do the sampling
+        if net == 'conv':
+            params = [
+                self.optimizee_create_new_individuals(self.random_state,
+                                                      individuals[
+                                                          best_ranking_idx].conv_params,
+                                                      eps)
+                for _ in range(traj.pop_size)]
+        elif net == 'mlp':
+            params = [
+                self.optimizee_create_new_individuals(self.random_state,
+                                                      individuals[
+                                                          best_ranking_idx].mlp_params,
+                                                      eps)
+                for _ in range(traj.pop_size)]
+        return params, best_fitness, best_individual
 
     def end(self, traj):
         """
@@ -216,13 +254,16 @@ class EnsembleKalmanFilter(Optimizer):
             param1 is accessible using `traj.param1`
 
         """
-        best_last_indiv = self.best_individual
+        traj.f_add_result('final_individual_conv', self.best_individual_conv)
+        traj.f_add_result('final_individual_mlp', self.best_individual_mlp)
 
-        traj.f_add_result('final_individual', best_last_indiv)
-
-        logger.info("The last individual was %s with fitness %s",
-                    self.best_individual, self.best_fitness)
-        logger.info("-- End of (successful) gradient descent --")
+        logger.info(
+            "The last individual for the conv net was %s with fitness %s",
+            self.best_individual_conv, self.best_fitness_conv)
+        logger.info(
+            "The last individual for the mlp net was %s with fitness %s",
+            self.best_individual_mlp, self.best_fitness_mlp)
+        logger.info("-- End of (successful) EnKF optimization --")
 
     def _expand_trajectory(self, traj):
         """

@@ -55,10 +55,11 @@ class MnistFashionOptimizee(Optimizee):
         traj.individual.f_add_parameter('seed', seed)
 
     def create_individual(self):
-        ensembles = []
-        # get weights for layers, conv1, conv2, fc1
-        # and flatten them
+        # get weights, biases from networks and flatten them
+        # convolutional network parameters ###
+        conv_ensembles = []
         with torch.no_grad():
+            # weights for layers, conv1, conv2, fc1
             conv1_weights = self.conv_net.state_dict()['conv1.weight'].view(-1).numpy()
             conv2_weights = self.conv_net.state_dict()['conv2.weight'].view(-1).numpy()
             fc1_weights = self.conv_net.state_dict()['fc1.weight'].view(-1).numpy()
@@ -74,9 +75,9 @@ class MnistFashionOptimizee(Optimizee):
             params = np.hstack((conv1_weights, conv1_bias, conv2_weights,
                                 conv2_bias, fc1_weights, fc1_bias))
 
-            ensembles.append(params)
+            conv_ensembles.append(params)
             for _ in range(self.n_ensembles - 1):
-                ensembles.append(
+                conv_ensembles.append(
                     np.hstack((
                         self._he_init(self.conv_net.state_dict()['conv1.weight']),
                         np.random.normal(self.conv_net.state_dict()['conv1.bias'].view(-1).numpy()),
@@ -86,9 +87,38 @@ class MnistFashionOptimizee(Optimizee):
                         np.random.normal(self.conv_net.state_dict()['fc1.bias'].view(-1).numpy()),
                     ))
                 )
-                # ensembles.append(np.random.uniform(-1, 1, len(params)))
-            ensembles = np.array(ensembles)
-            return dict(shift=ensembles,
+            # multilayer perceptron parameters ###
+            mlp_ensembles = []
+            lin1_weights = self.mlp_net.state_dict()['lin1.weight'].view(-1).numpy()
+            lin2_weights = self.mlp_net.state_dict()['lin2.weight'].view(-1).numpy()
+            lin3_weights = self.mlp_net.state_dict()['lin3.weight'].view(-1).numpy()
+
+            # bias
+            lin1_bias = self.mlp_net.state_dict()['lin1.bias'].numpy()
+            lin2_bias = self.mlp_net.state_dict()['lin2.bias'].numpy()
+            lin3_bias = self.mlp_net.state_dict()['lin3.bias'].numpy()
+
+            # stack everything into a vector of
+            # lin1_weights, lin1_bias, lin2_weights, lin2_bias,
+            # lin3_weights, lin3_bias
+            params = np.hstack((lin1_weights, lin1_bias, lin2_weights,
+                                lin2_bias, lin3_weights, lin3_bias))
+
+            mlp_ensembles.append(params)
+            for _ in range(self.n_ensembles - 1):
+                mlp_ensembles.append(
+                    np.hstack((
+                        self._he_init(self.mlp_net.state_dict()['lin1.weight']),
+                        np.random.normal(self.mlp_net.state_dict()['lin1.bias'].view(-1).numpy()),
+                        self._he_init(self.mlp_net.state_dict()['lin2.weight']),
+                        np.random.normal(self.mlp_net.state_dict()['lin2.bias'].view(-1).numpy()),
+                        self._he_init(self.mlp_net.state_dict()['lin3.weight']),
+                        np.random.normal(self.mlp_net.state_dict()['lin3.bias'].view(-1).numpy()),
+                    ))
+                )
+
+            return dict(conv_params=np.array(conv_ensembles),
+                        mlp_params=np.array(mlp_ensembles),
                         targets=self.labels.numpy(),
                         input=self.inputs.squeeze().numpy())
 
@@ -182,19 +212,34 @@ class MnistFashionOptimizee(Optimizee):
         # taken care of by jube
 
         # set the new parameter for the network
-        params = np.mean(traj.individual.shift, axis=0)
-        d = self._shape_parameter_to_conv_net(params)
+        conv_params = np.mean(traj.individual.conv_params, axis=0)
+        d = self._shape_parameter_to_conv_net(conv_params)
         self.conv_net.set_parameter(**d)
+        mlp_params = np.mean(traj.individual.mlp_params, axis=0)
+        d = self._shape_parameter_to_mlp_net(mlp_params)
+        self.mlp_net.set_parameter(**d)
         with torch.no_grad():
             criterion = nn.CrossEntropyLoss()
             outputs = self.conv_net(self.inputs)
-            loss = criterion(outputs, self.labels)
-            all_outputs = []
-            for s in traj.individual.shift:
-                d = self._shape_parameter_to_conv_net(s)
+            conv_loss = criterion(outputs, self.labels)
+            outputs = self.mlp_net(self.inputs)
+            mlp_loss = criterion(outputs, self.labels)
+            conv_params = []
+            mlp_params = []
+            for c, m in zip(traj.individual.conv_params, traj.individual.mlp_params):
+                d = self._shape_parameter_to_conv_net(c)
                 self.conv_net.set_parameter(**d)
-                all_outputs.append(self.conv_net(self.inputs).numpy().T)
-        return loss, np.array(all_outputs)
+                conv_params.append(self.conv_net(self.inputs).numpy().T)
+                d = self._shape_parameter_to_mlp_net(m)
+                self.mlp_net.set_parameter(**d)
+                mlp_params.append(self.mlp_net(self.inputs).numpy().T)
+            out = {
+                'conv_params': np.array(conv_params),
+                'mlp_params': np.array(mlp_params),
+                'conv_loss': float(conv_loss),
+                'mlp_loss': float(mlp_loss),
+            }
+        return out
 
     def _shape_parameter_to_conv_net(self, params):
         # first we need the shapes of the network parameter to reshape later
@@ -231,7 +276,7 @@ class MnistFashionOptimizee(Optimizee):
         lin2_w_shape = self.mlp_net.state_dict()['lin2.weight'].shape
         lin2_b_shape = self.mlp_net.state_dict()['lin2.bias'].shape
         lin3_w_shape = self.mlp_net.state_dict()['lin3.weight'].shape
-        lin3_b_shape = self.mlp_net.state_dict()['lin3.bias'].shape3
+        lin3_b_shape = self.mlp_net.state_dict()['lin3.bias'].shape
         # now get the lengths
         lin1_w_l = self.mlp_net.state_dict()['lin1.weight'].nelement()
         lin1_b_l = lin1_w_l + self.mlp_net.state_dict()['lin1.bias'].nelement()
