@@ -20,6 +20,37 @@ class EnsembleKalmanFilter(KalmanFilter):
     def __init__(self, tol, maxit, stopping_crit, n_batches=32,
                  shuffle=True, online=False, converge=False,
                  loss_function='norm'):
+        """
+        Ensemble Kalman Filter (EnKF)
+
+        EnKF following the formulation found in Iglesias et al. (2013), 
+        The Ensemble Kalman Filter for Inverse Problems.
+
+        :param tol: float, tolerance value for convergence
+        :param maxit: int, maximum number of iterations
+        :param stopping_crit: str, stopping criterion,
+            `discrepancy`: checks if the actual misfit is smaller or equal
+            to the noise
+            `relative`: checks if the absolute value between actual and
+            previous misfit is smaller than given tolerance `tol`
+            otherwise calculates the loss between iteration `n` and `n-1` and
+            stops if the difference is `< tol`
+        :param shuffle: bool, True if the dataset should be shuffled,
+            Default is `True`.
+        :param n_batches, int,  number of batches to used in mini-batch, 
+            Default is `32`.
+        :param online, bool, True if one random data point is requested,
+            between [0, dims], otherwise do mini-batch, Default is False
+        :param converge, bool, Checks and stops the iteration and updadting step
+            if convergence is reached, Default is `False`.
+        :param loss_function, string, name of the loss function
+           `MAE` is the Mean Absolute Error or l1 - loss
+           `MSE` is the Mean Squared Error or l2 - loss
+           `CE` cross-entropy loss
+           `norm` norm-2 or Forbenius norm,
+           Default is `norm`
+
+        """
         self.M = []
         self.E = []
         self.R = []
@@ -54,6 +85,48 @@ class EnsembleKalmanFilter(KalmanFilter):
 
     def fit(self, data, ensemble, ensemble_size, moments1,
             observations, model_output, gamma, noise=0., p=None, u_exact=None):
+        """
+        Prediction and update step of the EnKF
+        
+        Calculates new ensembles.
+
+        :param ensemble: nd numpy array, contains ensembles `u`
+        :param ensemble_size: int, number of ensembles
+        :param moments1: nd numpy array, first moment (mean)
+        :param u_exact: nd numpy array, exact control, e.g. if weight sof the model
+                   are known. Default is `None`
+        :param observations: nd numpy array, observation or targets
+        :param model_output: nd numpy array, output of the model
+            In terms of the Kalman Filter the model maps the ensembles (dim n)
+            into the observed data `y` (dim k). E.g. network output activity
+        :param noise: nd numpy array, Noise can be added to the model (for `gamma`) 
+            and is used in the misfit calculation for convergence.
+            E.g. multivariate normal distribution. Default is `0.0`
+        :param  gamma: nd numpy array, Normalizes the model-data distance in the
+            update step, :`noise * I` (I is identity matrix) or
+            :math:`\gamma=I` if `noise` is zero
+        :param p: nd numpy array
+            Exact solution given by :math:`G * u_exact`, where `G` is inverse
+            of a linear elliptic function `L`, it maps the control into the
+            observed data, Default is `None`
+        :return self, Possible outputs are, if calculated:
+            ensembles: nd numpy array, optimized `ensembles`
+            Cpp: nd numpy array, covariance matrix of the model output
+            Cup: nd numpy array, covariance matrix of the model output and the 
+                ensembles 
+            M: nd numpy array, Misfit
+                Measures the quality of the solution at each iteration
+            E: nd numpy array, Deviation of :math:`v^j` from the mean,
+                where the :math:`v^j` is the j-th sample of the approximated
+                distribution of samples
+            R: nd numpy array, Deviation of :math:`v^j` from the "true" solution
+                :math:`u^{\dagger}`, see (Herty2018 eq.29)
+            AE: nd numpy array, Deviation of :math:`v^j` under the application of
+                the model `G`, see (Herty2018 eq.28)
+            AR: nd numpy array, Deviation of from the "true" solution under
+                the application of model `G`, see (Herty2018 eq.28)
+           total_cost: list, contains the costs as defined in `loss_function`
+        """
 
         if isinstance(gamma, (int, float)):
             if float(gamma) == 0.:
