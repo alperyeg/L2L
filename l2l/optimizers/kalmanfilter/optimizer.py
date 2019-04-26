@@ -197,6 +197,15 @@ class EnsembleKalmanFilter(Optimizer):
         conv_fitnesses = np.array(conv_fitnesses)
         mlp_fitnesses = np.array(mlp_fitnesses)
 
+        generation_result_dict = {
+            'generation': self.g,
+            'conv_fitnesses': conv_fitnesses,
+            'mlp_fitnesses': mlp_fitnesses
+        }
+        traj.results.generation_params.f_add_result(
+            generation_name + '.algorithm_params', generation_result_dict)
+
+
         if self.g > 1 and self.g % 1000 == 0:
             conv_params, self.best_fitness_conv, self.best_individual_conv = self._new_individuals(
                 traj, conv_fitnesses, individuals, 'conv')
