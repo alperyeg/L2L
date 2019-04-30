@@ -37,8 +37,8 @@ class EnsembleKalmanFilter(KalmanFilter):
             stops if the difference is `< tol`
         :param shuffle: bool, True if the dataset should be shuffled,
             Default is `True`.
-        :param n_batches, int,  number of batches to used in mini-batch, 
-            Default is `32`.
+        :param n_batches, int,  number of batches to used in mini-batch. If set
+            to `1` uses the whole given dataset. Default is `32`.
         :param online, bool, True if one random data point is requested,
             between [0, dims], otherwise do mini-batch, Default is False
         :param converge, bool, Checks and stops the iteration and updadting step
