@@ -1,3 +1,5 @@
+from typing import Any, Iterator
+
 import torch
 import torchvision
 import torchvision.transforms as transforms
@@ -26,6 +28,92 @@ MnistFashionOptimizeeParameters = namedtuple('MnistFashionOptimizeeParameters',
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 
+class DataLoader:
+    """
+    Convenience class.
+
+    Dataloaders in Pytorch cannot be pickled and throw a `NotImplementedError`.
+    This class creates such Dataloaders but converts them to list-iterators.
+    It is not an optimal way but circumvents the problem. A drawback
+    with this approach is the increased memory usage and loss of features.
+    Note also the loading procedure only works when the `num_workers`
+    variables in `load_data` are set to `0`.
+    """
+    def __init__(self):
+        self.data_fashion = None
+        self.data_mnist = None
+        self.test_mnist = None
+        self.test_fashion = None
+
+    def init_iterators(self, root, batch_size):
+        data_fashion, data_mnist, test_fashion, test_mnist = self.load_data(
+            root, batch_size)
+        # here are the expensive operations
+        self.data_mnist = iter([i for i in data_mnist])
+        self.test_mnist = iter([i for i in test_mnist])
+        self.data_fashion = iter([i for i in data_fashion])
+        self.test_fashion = iter([i for i in test_fashion])
+
+    def load_data(self, root, batch_size):
+        transform = transforms.Compose(
+            [transforms.ToTensor(),
+             transforms.Normalize([0.5], [0.5])])
+
+        trainset_fashion = torchvision.datasets.FashionMNIST(
+            root=root,
+            train=True,
+            download=True,
+            transform=transform)
+        trainloader_fashion = torch.utils.data.DataLoader(trainset_fashion,
+                                                          batch_size=batch_size,
+                                                          shuffle=True,
+                                                          num_workers=0)
+
+        testset_fashion = torchvision.datasets.FashionMNIST(root=root,
+                                                            train=False,
+                                                            download=True,
+                                                            transform=transform)
+        testload_fashion = torch.utils.data.DataLoader(testset_fashion,
+                                                       batch_size=batch_size,
+                                                       shuffle=False,
+                                                       num_workers=0)
+        # load now MNIST dataset
+        trainset_mnist = torchvision.datasets.MNIST(root=root,
+                                                    train=True,
+                                                    download=True,
+                                                    transform=transform)
+        trainloader_mnist = torch.utils.data.DataLoader(trainset_mnist,
+                                                        batch_size=batch_size,
+                                                        shuffle=True,
+                                                        num_workers=0)
+
+        testset_mnist = torchvision.datasets.MNIST(root=root,
+                                                   train=False,
+                                                   download=True,
+                                                   transform=transform)
+        testload_mnist = torch.utils.data.DataLoader(testset_mnist,
+                                                     batch_size=batch_size,
+                                                     shuffle=False,
+                                                     num_workers=0)
+        return trainloader_fashion, trainloader_mnist, testload_fashion, testload_mnist
+
+    def dataiter_mnist(self):
+        """ MNIST training set list iterator """
+        return next(self.data_mnist)
+
+    def dataiter_fashion(self):
+        """ MNISTFashion training set list iterator """
+        return next(self.data_fashion)
+
+    def testiter_mnist(self):
+        """ MNIST test set list iterator """
+        return next(self.test_mnist)
+
+    def testiter_fashion(self):
+        """ MNISTFashion test set list iterator """
+        return next(self.test_fashion)
+
+
 class MnistFashionOptimizee(Optimizee):
     def __init__(self, traj, parameters):
         super().__init__(traj)
@@ -40,15 +128,22 @@ class MnistFashionOptimizee(Optimizee):
 
         self.conv_net = ConvNet().to(device)
         self.mlp_net = MLPNet().to(device)
+        self.criterion = nn.CrossEntropyLoss()
+        self.data_loader = DataLoader()
+        self.data_loader.init_iterators(self.root, self.batch_size)
+        self.dataiter_fashion = self.data_loader.dataiter_fashion
+        self.dataiter_mnist = self.data_loader.dataiter_mnist
+        self.testiter_fashion = self.data_loader.testiter_fashion
+        self.testiter_mnist = self.data_loader.testiter_mnist
 
-        dataiter_fashion, dataiter_mnist, testload_fashion, testload_mnist = self.load_data()
-        # TODO alternatively do the change randomly
-        if traj.individual.generation % 2 == 0:
-            self.inputs, self.labels = dataiter_fashion.next()
+        generation = traj.individual.generation
+        if generation % 2 == 0:
+            self.inputs, self.labels = self.dataiter_fashion()
         else:
-            self.inputs, self.labels = dataiter_mnist.next()
+            self.inputs, self.labels = self.dataiter_mnist()
 
-        # create_individual can be called because __init__ is complete except for traj initializtion
+        # create_individual can be called because __init__ is complete except
+        # for traj initializtion
         indiv_dict = self.create_individual()
         for key, val in indiv_dict.items():
             traj.individual.f_add_parameter(key, val)
@@ -116,7 +211,6 @@ class MnistFashionOptimizee(Optimizee):
                         np.random.normal(self.mlp_net.state_dict()['lin3.bias'].view(-1).numpy()),
                     ))
                 )
-
             return dict(conv_params=np.array(conv_ensembles),
                         mlp_params=np.array(mlp_ensembles),
                         targets=self.labels.numpy(),
@@ -151,48 +245,6 @@ class MnistFashionOptimizee(Optimizee):
         new_individuals = dist.sample(self.n_ensembles)
         return new_individuals
 
-    def load_data(self):
-        transform = transforms.Compose(
-            [transforms.ToTensor(),
-             transforms.Normalize([0.5], [0.5])])
-
-        trainset_fashion = torchvision.datasets.FashionMNIST(root=self.root,
-                                                             train=True,
-                                                             download=True,
-                                                             transform=transform)
-        trainloader_fashion = torch.utils.data.DataLoader(trainset_fashion,
-                                                          batch_size=self.batch_size,
-                                                          shuffle=True,
-                                                          num_workers=2)
-
-        testset_fashion = torchvision.datasets.FashionMNIST(root=self.root,
-                                                            train=False,
-                                                            download=True,
-                                                            transform=transform)
-        testload_fashion = torch.utils.data.DataLoader(testset_fashion,
-                                                       batch_size=self.batch_size,
-                                                       shuffle=False,
-                                                       num_workers=2)
-        # load now MNIST dataset
-        trainset_mnist = torchvision.datasets.MNIST(root=self.root, train=True,
-                                                    download=True,
-                                                    transform=transform)
-        trainloader_mnist = torch.utils.data.DataLoader(trainset_mnist,
-                                                        batch_size=self.batch_size,
-                                                        shuffle=True,
-                                                        num_workers=2)
-
-        testset_mnist = torchvision.datasets.MNIST(root=self.root, train=False,
-                                                   download=True,
-                                                   transform=transform)
-        testload_mnist = torch.utils.data.DataLoader(testset_mnist,
-                                                     batch_size=self.batch_size,
-                                                     shuffle=False,
-                                                     num_workers=2)
-        dataiter_fashion = iter(trainloader_fashion)
-        dataiter_mnist = iter(trainloader_mnist)
-        return dataiter_fashion, dataiter_mnist, testload_fashion, testload_mnist
-
     def bounding_func(self, individual):
         """
         Bounds the individual within the required bounds via coordinate clipping
@@ -218,21 +270,33 @@ class MnistFashionOptimizee(Optimizee):
         mlp_params = np.mean(traj.individual.mlp_params, axis=0)
         d = self._shape_parameter_to_mlp_net(mlp_params)
         self.mlp_net.set_parameter(**d)
+        generation = traj.individual.generation
         with torch.no_grad():
-            criterion = nn.CrossEntropyLoss()
-            outputs = self.conv_net(self.inputs)
-            conv_loss = criterion(outputs, self.labels)
-            outputs = self.mlp_net(self.inputs)
-            mlp_loss = criterion(outputs, self.labels)
+            if generation % 1000 != 0:
+                inputs = self.inputs
+                labels = self.labels
+                if generation % 2 == 0:
+                    self.inputs, self.labels = self.dataiter_fashion()
+                else:
+                    self.inputs, self.labels = self.dataiter_mnist()
+            elif generation % 1000 == 0 and generation > 0:
+                # randomly test from mnist or fashion
+                tests = (self.testiter_mnist, self.testiter_fashion)
+                rand = np.random.randint(2)
+                inputs, labels = tests[rand]()
+            outputs = self.conv_net(inputs)
+            conv_loss = self.criterion(outputs, labels)
+            outputs = self.mlp_net(inputs)
+            mlp_loss = self.criterion(outputs, labels)
             conv_params = []
             mlp_params = []
             for c, m in zip(traj.individual.conv_params, traj.individual.mlp_params):
                 d = self._shape_parameter_to_conv_net(c)
                 self.conv_net.set_parameter(**d)
-                conv_params.append(self.conv_net(self.inputs).numpy().T)
+                conv_params.append(self.conv_net(inputs).numpy().T)
                 d = self._shape_parameter_to_mlp_net(m)
                 self.mlp_net.set_parameter(**d)
-                mlp_params.append(self.mlp_net(self.inputs).numpy().T)
+                mlp_params.append(self.mlp_net(inputs).numpy().T)
             out = {
                 'conv_params': np.array(conv_params),
                 'mlp_params': np.array(mlp_params),
