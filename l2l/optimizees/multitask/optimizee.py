@@ -272,7 +272,7 @@ class MnistFashionOptimizee(Optimizee):
         self.mlp_net.set_parameter(**d)
         generation = traj.individual.generation
         with torch.no_grad():
-            if generation % 1000 != 0:
+            if generation != 1000:
                 inputs = self.inputs
                 labels = self.labels
                 if generation % 2 == 0:
