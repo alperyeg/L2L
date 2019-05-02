@@ -6,9 +6,9 @@ import torch.nn.functional as F
 class MLPNet(nn.Module):
     def __init__(self):
         super(MLPNet, self).__init__()
-        self.lin1 = nn.Linear(784, 512)
-        self.lin2 = nn.Linear(512, 256)
-        self.lin3 = nn.Linear(256, 10)
+        self.lin1 = nn.Linear(784, 256)
+        self.lin2 = nn.Linear(256, 128)
+        self.lin3 = nn.Linear(128, 10)
         self.loss = 0.0
 
     def forward(self, x):
