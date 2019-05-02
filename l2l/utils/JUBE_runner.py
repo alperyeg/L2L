@@ -3,6 +3,8 @@ import os.path
 import pickle
 import time
 import logging
+import shutil
+from .trajectory import Trajectory
 
 logger = logging.getLogger("JUBERunner")
 
@@ -50,6 +52,7 @@ class JUBERunner():
         self.exec = args['exec']
         self.filename = ""
         self.path = args['work_path']
+        self.tmp_trajectory = None
         # Create directories for workspace
         if not os.path.exists(self.path):
             os.makedirs(self.path)
@@ -186,6 +189,9 @@ class JUBERunner():
 
         return results
 
+    def add_tmp_trajectory(self, trajectory):
+        self.tmp_trajectory = Trajectory(name='tmp_trajectory')
+
     def run(self, trajectory, generation):
         """
         Takes care of running the generation by preparing the JUBE configuration files and, waiting for the execution
@@ -202,13 +208,19 @@ class JUBERunner():
         ready_files = []
         path_ready = self.path + "ready_files/ready_"
         self.prepare_run_file(path_ready)
-
+        # Remove previous trajectories
+        if os.path.isdir(self.path + "/trajectories/"):
+            shutil.rmtree(self.path + "/trajectories/")
+        os.mkdir(self.path + "/trajectories/")
+        self.add_tmp_trajectory(trajectory)
         # Dump all trajectories for each optimizee run in the generation
         for ind in self.trajectory.individuals[generation]:
-            trajectory.individual = ind
+            self.tmp_trajectory.individual = ind
+            self.tmp_trajectory.generation = generation
+            # trajectory.individual = ind
             handle = open(self.path + "/trajectories/trajectory_" + str(ind.ind_idx) + "_" + str(generation) + ".bin",
                           "wb")
-            pickle.dump(trajectory, handle, pickle.HIGHEST_PROTOCOL)
+            pickle.dump(self.tmp_trajectory, handle, pickle.HIGHEST_PROTOCOL)
             handle.close()
             ready_files.append(path_ready + str(ind.ind_idx))
 
