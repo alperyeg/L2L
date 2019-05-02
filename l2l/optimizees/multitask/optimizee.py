@@ -44,15 +44,28 @@ class DataLoader:
         self.data_mnist = None
         self.test_mnist = None
         self.test_fashion = None
+        self.data_fashion_loader = None
+        self.data_mnist_loader = None
+        self.test_fashion_loader = None
+        self.test_mnist_loader = None
 
     def init_iterators(self, root, batch_size):
-        data_fashion, data_mnist, test_fashion, test_mnist = self.load_data(
-            root, batch_size)
+        self.data_fashion_loader, self.data_mnist_loader, \
+            self.test_fashion_loader, self.test_mnist_loader = self.load_data(
+                root, batch_size)
         # here are the expensive operations
-        self.data_mnist = iter([i for i in data_mnist])
-        self.test_mnist = iter([i for i in test_mnist])
-        self.data_fashion = iter([i for i in data_fashion])
-        self.test_fashion = iter([i for i in test_fashion])
+        self.data_mnist = self._make_iterator(self.data_mnist_loader)
+        self.test_mnist = self._make_iterator(self.test_mnist_loader)
+        self.data_fashion = self._make_iterator(self.data_fashion_loader)
+        self.test_fashion = self._make_iterator(self.test_fashion_loader)
+
+    @staticmethod
+    def _make_iterator(iterable):
+        """
+        Return an iterator for a given iterable.
+        Here `iterable` is a pytorch `DataLoader`
+        """
+        return iter([i for i in iterable])
 
     def load_data(self, root, batch_size):
         transform = transforms.Compose(
@@ -99,19 +112,35 @@ class DataLoader:
 
     def dataiter_mnist(self):
         """ MNIST training set list iterator """
-        return next(self.data_mnist)
+        try:
+            return next(self.data_mnist)
+        except StopIteration:
+            self.data_mnist = self._make_iterator(self.data_mnist_loader)
+            return next(self.data_mnist)
 
     def dataiter_fashion(self):
         """ MNISTFashion training set list iterator """
-        return next(self.data_fashion)
+        try:
+            return next(self.data_fashion)
+        except StopIteration:
+            self.data_fashion = self._make_iterator(self.data_fashion_loader)
+            return next(self.data_fashion)
 
     def testiter_mnist(self):
         """ MNIST test set list iterator """
-        return next(self.test_mnist)
+        try:
+            return next(self.test_mnist)
+        except StopIteration:
+            self.test_mnist = self._make_iterator(self.test_mnist_loader)
+            return next(self.test_mnist)
 
     def testiter_fashion(self):
         """ MNISTFashion test set list iterator """
-        return next(self.test_fashion)
+        try:
+            return next(self.test_fashion)
+        except StopIteration:
+            self.test_fashion = self._make_iterator(self.test_fashion_loader)
+            return next(self.test_fashion)
 
 
 class MnistFashionOptimizee(Optimizee):
