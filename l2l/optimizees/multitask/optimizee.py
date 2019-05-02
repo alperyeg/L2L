@@ -1,5 +1,3 @@
-from typing import Any, Iterator
-
 import torch
 import torchvision
 import torchvision.transforms as transforms
@@ -306,13 +304,20 @@ class MnistFashionOptimizee(Optimizee):
                 labels = self.labels
                 if generation % 2 == 0:
                     self.inputs, self.labels = self.dataiter_fashion()
+                    print(
+                        'Fashion set used at generation {}'.format(generation))
                 else:
                     self.inputs, self.labels = self.dataiter_mnist()
+                    print(
+                        'MNIST set used at generation {}'.format(generation))
             elif generation % 1000 == 0 and generation > 0:
                 # randomly test from mnist or fashion
                 tests = (self.testiter_mnist, self.testiter_fashion)
                 rand = np.random.randint(2)
                 inputs, labels = tests[rand]()
+                print(
+                    '{} test set used at generation {} | 0=MNIST, 1=Fashion'.format(
+                        rand, generation))
             outputs = self.conv_net(inputs)
             conv_loss = self.criterion(outputs, labels)
             outputs = self.mlp_net(inputs)
@@ -326,6 +331,8 @@ class MnistFashionOptimizee(Optimizee):
                 d = self._shape_parameter_to_mlp_net(m)
                 self.mlp_net.set_parameter(**d)
                 mlp_params.append(self.mlp_net(inputs).numpy().T)
+            print('Conv loss {}, Mlp loss {}'.format(float(conv_loss),
+                                                     float(mlp_loss)))
             out = {
                 'conv_params': np.array(conv_params),
                 'mlp_params': np.array(mlp_params),
