@@ -134,7 +134,8 @@ class EnsembleKalmanFilter(KalmanFilter):
         sqrt_inv_gamma = sqrt(inv(self.gamma))
         self.e = np.zeros_like(ensemble)
         self.r = np.zeros_like(ensemble)
-        self.misfit = np.zeros_like(ensemble)
+        self.misfit = np.zeros_like(model_output)
+        self.u_exact = u_exact
         self.m1 = moments1
         # get shapes
         self.gamma_s, self.dims = _get_shapes(observations, model_output)
@@ -149,14 +150,14 @@ class EnsembleKalmanFilter(KalmanFilter):
         # copy the data so we do not overwrite the original arguments
         self.ensemble = ensemble.copy()
         self.observations = observations.copy()
-        self.observations = _encode_targets(observations, self.gamma_s)
+        self.observations = _encode_targets(self.observations, self.gamma_s)
         self.data = data.copy()
 
         for i in range(self.maxit):
             if (i % 100) == 0:
                 print('Iteration {}/{}'.format(i, self.maxit))
             if self.shuffle:
-                data, observations = _shuffle(self.data, self.observations)
+                data, self.observations = _shuffle(self.data, self.observations)
 
             # check for early stopping
             if self.converge:
@@ -177,7 +178,7 @@ class EnsembleKalmanFilter(KalmanFilter):
                         break
             elif self.stopping_crit == 'cost' and self.converge:
                 # calculate loss
-                cost = _calculate_cost(y=observations, y_hat=model_output.T,
+                cost = _calculate_cost(y=self.observations, y_hat=model_output.T,
                                        loss_function=self.loss_function)
                 self.total_cost.append(cost)
                 # check if early stopping is possible
@@ -195,7 +196,7 @@ class EnsembleKalmanFilter(KalmanFilter):
                 for l in range(ensemble_size):
                     self.e[l] = ensemble[l] - self.m1
                 if u_exact is not None:
-                    self.misfit[:, :, idx], r = _calculate_misfit(ensemble,
+                    self.misfit[:, :, idx], r = _calculate_misfit(self.ensemble,
                                                                   ensemble_size,
                                                                   self.misfit[:, :, idx],
                                                                   self.r,
@@ -210,10 +211,10 @@ class EnsembleKalmanFilter(KalmanFilter):
                 for d in idx:
                     # now get only the individuals output according to idx
                     g_tmp = model_output[:, :, d]
-                    self.ensemble = _update_step(self.ensemble, observations[d],
-                                                 g_tmp, gamma, ensemble_size)
+                    self.ensemble = _update_step(self.ensemble, self.observations[d],
+                                                 g_tmp, self.gamma, ensemble_size)
 
-            self.m1 = np.mean(ensemble, axis=0)
+            self.m1 = np.mean(self.ensemble, axis=0)
         return self
 
 
