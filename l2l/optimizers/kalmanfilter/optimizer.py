@@ -179,6 +179,7 @@ class EnsembleKalmanFilter(Optimizer):
             conv_ensembles.append(enkf.ensemble)
 
             ens = np.array(i.mlp_params)
+            ensemble_size = ens.shape[0]
             model_output = traj.current_results[i.ind_idx][1]['mlp_params']
             fitness_per_individual = traj.current_results[i.ind_idx][1]['mlp_loss']
             mlp_fitnesses.append(fitness_per_individual)
