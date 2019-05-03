@@ -210,7 +210,7 @@ class EnsembleKalmanFilter(KalmanFilter):
                 for d in idx:
                     # now get only the individuals output according to idx
                     g_tmp = model_output[:, :, d]
-                    self.ensemble = _update_step(ensemble, observations[d],
+                    self.ensemble = _update_step(self.ensemble, observations[d],
                                                  g_tmp, gamma, ensemble_size)
 
             self.m1 = np.mean(ensemble, axis=0)
