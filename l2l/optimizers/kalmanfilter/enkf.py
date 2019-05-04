@@ -127,11 +127,6 @@ class EnsembleKalmanFilter(KalmanFilter):
                 the application of model `G`, see (Herty2018 eq.28)
            total_cost: list, contains the costs as defined in `loss_function`
         """
-
-        if isinstance(gamma, (int, float)):
-            if float(gamma) == 0.:
-                self.gamma = np.eye(self.gamma_s)
-        sqrt_inv_gamma = sqrt(inv(self.gamma))
         self.e = np.zeros_like(ensemble)
         self.r = np.zeros_like(ensemble)
         self.misfit = np.zeros_like(model_output)
@@ -139,6 +134,11 @@ class EnsembleKalmanFilter(KalmanFilter):
         self.m1 = moments1
         # get shapes
         self.gamma_s, self.dims = _get_shapes(observations, model_output)
+
+        if isinstance(gamma, (int, float)):
+            if float(gamma) == 0.:
+                self.gamma = np.eye(self.gamma_s)
+        sqrt_inv_gamma = sqrt(inv(self.gamma))
 
         self.total_cost = []
 
