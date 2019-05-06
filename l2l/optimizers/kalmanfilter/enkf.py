@@ -1,5 +1,6 @@
 import numpy as np
 import abc
+import multiprocessing as mp
 from numpy import sqrt
 from numpy.linalg import norm, inv, solve
 from abc import ABCMeta
@@ -70,6 +71,9 @@ class EnsembleKalmanFilter(KalmanFilter):
         self.norm_uexact2 = None
         self.norm_p2 = None
         self.m1 = None
+        self.model_output = None
+        self.g_tmp = None
+        self.observations_d = None
 
         self.maxit = maxit
         self.shuffle = shuffle
@@ -82,6 +86,7 @@ class EnsembleKalmanFilter(KalmanFilter):
         self.gamma = 0.
         self.gamma_s = 0
         self.dims = 0
+        self.ensemble_size = 0
 
     def fit(self, data, ensemble, ensemble_size, moments1,
             observations, model_output, gamma, noise=0., p=None, u_exact=None):
@@ -134,6 +139,8 @@ class EnsembleKalmanFilter(KalmanFilter):
         self.m1 = moments1
         # get shapes
         self.gamma_s, self.dims = _get_shapes(observations, model_output)
+        self.ensemble_size = ensemble_size
+        self.model_output = model_output
 
         if isinstance(gamma, (int, float)):
             if float(gamma) == 0.:
@@ -210,12 +217,27 @@ class EnsembleKalmanFilter(KalmanFilter):
 
                 for d in idx:
                     # now get only the individuals output according to idx
-                    g_tmp = model_output[:, :, d]
-                    self.ensemble = _update_step(self.ensemble, self.observations[d],
-                                                 g_tmp, self.gamma, ensemble_size)
+                    self.g_tmp = model_output[:, :, d]
+                    self.observations_d = self.observations[d]
+                    #     self.ensemble = _update_step(self.ensemble, self.observations[d],
+                    #                                  g_tmp, self.gamma, ensemble_size)
+                    self.Cup = _cov_mat(self.ensemble, self.g_tmp,
+                                        ensemble_size)
+                    self.Cpp = _cov_mat(self.g_tmp, self.g_tmp,
+                                        self.ensemble_size)
+                    with mp.Pool(mp.cpu_count()) as pool:
+                        ens = pool.map(self._parallel_update,
+                                       range(self.ensemble_size))
+                    self.ensemble = np.array(ens)
 
             self.m1 = np.mean(self.ensemble, axis=0)
         return self
+
+    def _parallel_update(self, j):
+        target = self.observations_d
+        tmp = solve(self.Cpp + self.gamma, target - self.g_tmp[j])
+        ensemble = self.ensemble[j] + (self.Cup @ tmp)
+        return ensemble
 
 
 def _update_step(ensemble, observations, g,  gamma, ensemble_size):
