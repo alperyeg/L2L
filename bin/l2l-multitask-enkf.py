@@ -91,7 +91,7 @@ def run_experiment():
     traj.f_add_parameter_to_group("JUBE_params", "tasks_per_job", "1")
     # The execution command
     traj.f_add_parameter_to_group("JUBE_params", "exec",
-                                  "mpirun python " + root_dir_path +
+                                  "python " + root_dir_path +
                                   "/run_files/run_optimizee.py")
     # Ready file for a generation
     traj.f_add_parameter_to_group("JUBE_params", "ready_file",
@@ -101,11 +101,8 @@ def run_experiment():
 
     # Optimizee params
     optimizee_seed = 123
-    root = '/home/yegenoglu/Documents/toolbox/L2L/l2l/optimizees/multitask'
     optimizee_parameters = MnistFashionOptimizeeParameters(seed=optimizee_seed,
-                                                           n_ensembles=100,
-                                                           batch_size=1,
-                                                           root=root)
+                                                           n_ensembles=100)
     # Inner-loop simulator
     optimizee = MnistFashionOptimizee(traj, optimizee_parameters)
     jube.prepare_optimizee(optimizee, root_dir_path)
@@ -113,6 +110,7 @@ def run_experiment():
     logger.info("Optimizee parameters: %s", optimizee_parameters)
 
     # Outer-loop optimizer initialization
+    root = '/home/yegenoglu/Documents/toolbox/L2L/l2l/optimizees/multitask'
     optimizer_seed = 1234
     optimizer_parameters = EnsembleKalmanFilterParameters(noise=0, gamma=0,
                                                           tol=1e-5,
@@ -120,12 +118,14 @@ def run_experiment():
                                                           n_iteration=5,
                                                           stopping_crit='discrepancy',
                                                           pop_size=1,
-                                                          n_batches=32,
+                                                          n_batches=1,
                                                           shuffle=False,
-                                                          online=True,
+                                                          online=False,
                                                           epsilon=0.1,
                                                           decay_rate=0.001,
-                                                          seed=optimizer_seed)
+                                                          seed=optimizer_seed,
+                                                          batch_size=4,
+                                                          root=root)
     logger.info("Optimizer parameters: %s", optimizer_parameters)
 
     optimizer = EnsembleKalmanFilter(traj,
