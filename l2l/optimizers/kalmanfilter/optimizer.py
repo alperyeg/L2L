@@ -7,6 +7,7 @@ from l2l.utils.tools import cartesian_product
 from .enkf import EnsembleKalmanFilter as EnKF
 from l2l import dict_to_list
 from l2l.optimizers.optimizer import Optimizer
+from .dataloader import DataLoader
 
 logger = logging.getLogger("optimizers.kalmanfilter")
 
@@ -14,7 +15,8 @@ EnsembleKalmanFilterParameters = namedtuple(
     'EnsembleKalmanFilter', ['noise', 'gamma', 'tol',
                              'maxit', 'stopping_crit', 'n_iteration',
                              'pop_size', 'shuffle', 'n_batches', 'online',
-                             'epsilon', 'decay_rate', 'seed']
+                             'epsilon', 'decay_rate', 'seed', 'batch_size',
+                             'root']
 )
 
 
@@ -46,6 +48,9 @@ EnsembleKalmanFilterParameters.__doc__ = """
                 Where :math:`\\epsilon` is the value from `epsilon`. The
 :param seed: The random seed used to sample and fit the distribution. 
              Uses a random generator seeded with this seed.
+:param batch_size: int, Number of data samples to be load from a `DataLoader`. 
+    (See class `DataLoader` in module `dataloader.py`)
+:param root: str, Path to the data sets needed for `DataLoader`
 """
 
 
@@ -92,6 +97,8 @@ class EnsembleKalmanFilter(Optimizer):
                              comment='Seed used for random number generation '
                                      'in optimizer')
         traj.f_add_parameter('pop_size', parameters.pop_size)
+        traj.f_add_parameter('root', parameters.root)
+        traj.f_add_parameter('batch_size', parameters.batch_size)
 
         _, self.optimizee_individual_dict_spec = dict_to_list(
             self.optimizee_create_individual(), get_dict_spec=True)
@@ -101,13 +108,15 @@ class EnsembleKalmanFilter(Optimizer):
         # Set the random state seed for distribution
         self.random_state = np.random.RandomState(traj.parameters.seed)
 
-        #: The current generation number
-        self.g = 0
         # for the sampling procedure
         # `epsilon` value given by the user
         self.epsilon = parameters.epsilon
         # decay rate
         self.decay_rate = parameters.decay_rate
+        # path to dataloader
+        self.root = parameters.root
+        # batch_size for dataloader
+        self.batch_size = parameters.batch_size
 
         #: The population (i.e. list of individuals) to be evaluated at the
         # next iteration
@@ -122,6 +131,20 @@ class EnsembleKalmanFilter(Optimizer):
         self.best_individual_conv = None
         self.best_fitness_mlp = 0.
         self.best_individual_mlp = None
+
+        # init dataloaders
+        self.data_loader = DataLoader()
+        self.data_loader.init_iterators(self.root, self.batch_size)
+        self.dataiter_fashion = self.data_loader.dataiter_fashion
+        self.dataiter_mnist = self.data_loader.dataiter_mnist
+        self.testiter_fashion = self.data_loader.testiter_fashion
+        self.testiter_mnist = self.data_loader.testiter_mnist
+
+        self.inputs, self.targets = self.dataiter_fashion()
+
+        for e in self.eval_pop:
+            e["inputs"] = self.inputs
+            e["targets"] = self.targets
 
         self._expand_trajectory(traj)
 
@@ -145,30 +168,32 @@ class EnsembleKalmanFilter(Optimizer):
         # old_eval_pop = self.eval_pop.copy()
         self.eval_pop.clear()
 
-        n_iter = traj.generation
-        individuals = traj.individuals[n_iter]
+        individuals = traj.individuals[traj.generation]
         gamma = traj.gamma
         conv_ensembles = []
         mlp_ensembles = []
         conv_fitnesses = []
         mlp_fitnesses = []
-        data_input = None
-        data_targets = None
+
+        if traj.generation% 2 == 0:
+            self.inputs, self.targets = self.dataiter_fashion()
+        else:
+            self.inputs, self.targets = self.dataiter_mnist()
+        data_inputs = self.inputs.squeeze().numpy()
+        data_targets = self.targets.numpy()
         # go over all individuals
         for i in individuals:
             # conv net optimization
-            ens = np.array(i.conv_params)
+            ens = np.array(i.conv_ens)
             ensemble_size = ens.shape[0]
-            data_input = i.input
-            data_targets = i.targets
             # get the score/fitness of the individual
             fitness_per_individual = traj.current_results[i.ind_idx][1]['conv_loss']
             conv_fitnesses.append(fitness_per_individual)
-            model_output = traj.current_results[i.ind_idx][1]['conv_params']
+            model_output = traj.current_results[i.ind_idx][1]['conv_out']
             enkf = EnKF(tol=traj.tol, maxit=traj.maxit,
                         stopping_crit=traj.stopping_crit, shuffle=traj.shuffle,
                         online=traj.online, n_batches=traj.n_batches)
-            enkf.fit(data=data_input,
+            enkf.fit(data=data_inputs,
                      ensemble=ens,
                      ensemble_size=ensemble_size,
                      moments1=np.mean(ens, axis=0),
@@ -178,12 +203,12 @@ class EnsembleKalmanFilter(Optimizer):
                      noise=traj.noise, p=None, gamma=gamma)
             conv_ensembles.append(enkf.ensemble)
 
-            ens = np.array(i.mlp_params)
+            ens = np.array(i.mlp_ens)
             ensemble_size = ens.shape[0]
-            model_output = traj.current_results[i.ind_idx][1]['mlp_params']
+            model_output = traj.current_results[i.ind_idx][1]['mlp_out']
             fitness_per_individual = traj.current_results[i.ind_idx][1]['mlp_loss']
             mlp_fitnesses.append(fitness_per_individual)
-            enkf.fit(data=data_input,
+            enkf.fit(data=data_inputs,
                      ensemble=ens,
                      ensemble_size=ensemble_size,
                      moments1=np.mean(ens, axis=0),
@@ -193,36 +218,37 @@ class EnsembleKalmanFilter(Optimizer):
                      noise=traj.noise, p=None, gamma=gamma)
             mlp_ensembles.append(enkf.ensemble)
 
-        generation_name = 'generation_{}'.format(self.g)
+        generation_name = 'generation_{}'.format(traj.generation)
         traj.results.generation_params.f_add_result_group(generation_name)
         conv_fitnesses = np.array(conv_fitnesses)
         mlp_fitnesses = np.array(mlp_fitnesses)
 
         generation_result_dict = {
-            'generation': self.g,
+            'generation': traj.generation,
             'conv_fitnesses': conv_fitnesses,
             'mlp_fitnesses': mlp_fitnesses
         }
         traj.results.generation_params.f_add_result(
             generation_name + '.algorithm_params', generation_result_dict)
 
-        if self.g > 1 and self.g % 1000 == 0:
+        if traj.generation> 1 and traj.generation% 1000 == 0:
             conv_params, self.best_fitness_conv, self.best_individual_conv = self._new_individuals(
                 traj, conv_fitnesses, individuals, 'conv')
             mlp_params, self.best_fitness_mlp, self.best_individual_mlp = self._new_individuals(
                 traj, mlp_fitnesses, individuals, 'mlp')
-            self.eval_pop = [dict(conv_params=conv_params[i],
-                                  mlp_params=mlp_params[i],
-                                  targets=data_targets,
-                                  input=data_input)
+            self.eval_pop = [dict(conv_ens=conv_params[i],
+                                  mlp_ens=mlp_params[i],
+                                  inputs=self.inputs,
+                                  targets=self.targets)
                              for i in range(traj.pop_size)]
         else:
-            self.eval_pop = [dict(conv_params=conv_ensembles[i],
-                                  mlp_params=mlp_ensembles[i],
-                                  targets=data_targets,
-                                  input=data_input)
+            self.eval_pop = [dict(conv_ens=conv_ensembles[i],
+                                  mlp_ens=mlp_ensembles[i],
+                                  inputs=self.inputs,
+                                  targets=self.targets
+                                  )
                              for i in range(traj.pop_size)]
-        self.g += 1
+        traj.generation += 1
         self._expand_trajectory(traj)
 
     def _new_individuals(self, traj, fitnesses, individuals, net):
@@ -235,7 +261,7 @@ class EnsembleKalmanFilter(Optimizer):
         best_ranking_idx = ranking_idx[0]
         best_individual = individuals[best_ranking_idx]
         # do the decay
-        eps = self.epsilon * np.exp(-self.decay_rate * self.g)
+        eps = self.epsilon * np.exp(-self.decay_rate * traj.generation)
         params = []
         # now do the sampling
         if net == 'conv':
@@ -290,7 +316,7 @@ class EnsembleKalmanFilter(Optimizer):
         grouped_params_dict = {'individual.' + key: val for key, val in
                                grouped_params_dict.items()}
 
-        final_params_dict = {'generation': [self.g],
+        final_params_dict = {'generation': [traj.generation],
                              'ind_idx': range(len(self.eval_pop))}
         final_params_dict.update(grouped_params_dict)
 

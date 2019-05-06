@@ -12,20 +12,14 @@ from .conv_net import ConvNet
 from .mlp_net import MLPNet
 from l2l.optimizers.crossentropy import distribution
 
-MNISTOptimizeeParameters = namedtuple('MNISTOptimizeeParameters', ['n_hidden',
-                                                                   'seed', 'use_small_mnist',
-                                                                   'n_ensembles',
-                                                                   'root',
-                                                                   'batch_size'])
-
 MnistFashionOptimizeeParameters = namedtuple('MnistFashionOptimizeeParameters',
                                              ['seed',
-                                              'n_ensembles', 'root',
-                                              'batch_size'])
+                                              'n_ensembles'])
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 
+# TODO can be removed safely
 class DataLoader:
     """
     Convenience class.
@@ -65,7 +59,8 @@ class DataLoader:
         """
         return iter([i for i in iterable])
 
-    def load_data(self, root, batch_size):
+    @staticmethod
+    def load_data(root, batch_size):
         transform = transforms.Compose(
             [transforms.ToTensor(),
              transforms.Normalize([0.5], [0.5])])
@@ -150,24 +145,11 @@ class MnistFashionOptimizee(Optimizee):
         self.random_state = np.random.RandomState(seed=seed)
 
         self.n_ensembles = parameters.n_ensembles
-        self.batch_size = parameters.batch_size
-        self.root = parameters.root
 
         self.conv_net = ConvNet().to(device)
         self.mlp_net = MLPNet().to(device)
         self.criterion = nn.CrossEntropyLoss()
-        self.data_loader = DataLoader()
-        self.data_loader.init_iterators(self.root, self.batch_size)
-        self.dataiter_fashion = self.data_loader.dataiter_fashion
-        self.dataiter_mnist = self.data_loader.dataiter_mnist
-        self.testiter_fashion = self.data_loader.testiter_fashion
-        self.testiter_mnist = self.data_loader.testiter_mnist
-
-        generation = traj.individual.generation
-        if generation % 2 == 0:
-            self.inputs, self.labels = self.dataiter_fashion()
-        else:
-            self.inputs, self.labels = self.dataiter_mnist()
+        self.generation = traj.individual.generation
 
         # create_individual can be called because __init__ is complete except
         # for traj initializtion
@@ -238,10 +220,8 @@ class MnistFashionOptimizee(Optimizee):
                         np.random.normal(self.mlp_net.state_dict()['lin3.bias'].view(-1).numpy()),
                     ))
                 )
-            return dict(conv_params=np.array(conv_ensembles),
-                        mlp_params=np.array(mlp_ensembles),
-                        targets=self.labels.numpy(),
-                        input=self.inputs.squeeze().numpy())
+            return dict(conv_ens=np.array(conv_ensembles),
+                        mlp_ens=np.array(mlp_ensembles))
 
     @staticmethod
     def _he_init(weights, gain=0):
@@ -291,51 +271,53 @@ class MnistFashionOptimizee(Optimizee):
         # taken care of by jube
 
         # set the new parameter for the network
-        conv_params = np.mean(traj.individual.conv_params, axis=0)
+        conv_params = np.mean(traj.individual.conv_ens, axis=0)
         d = self._shape_parameter_to_conv_net(conv_params)
         self.conv_net.set_parameter(**d)
-        mlp_params = np.mean(traj.individual.mlp_params, axis=0)
+        mlp_params = np.mean(traj.individual.mlp_ens, axis=0)
         d = self._shape_parameter_to_mlp_net(mlp_params)
         self.mlp_net.set_parameter(**d)
-        generation = traj.individual.generation
+        self.generation = traj.individual.generation
         with torch.no_grad():
-            if generation != 1000:
-                inputs = self.inputs
-                labels = self.labels
-                if generation % 2 == 0:
-                    self.inputs, self.labels = self.dataiter_fashion()
+            if self.generation != 1000:
+                inputs = traj.individual.inputs
+                targets = traj.individual.targets
+                if self.generation % 2 == 0:
                     print(
-                        'Fashion set used at generation {}'.format(generation))
+                        'Fashion set used at generation {}'.format(
+                            self.generation))
                 else:
-                    self.inputs, self.labels = self.dataiter_mnist()
                     print(
-                        'MNIST set used at generation {}'.format(generation))
-            elif generation % 1000 == 0 and generation > 0:
+                        'MNIST set used at generation {}'.format(
+                            self.generation))
+            elif self.generation % 1000 == 0 and self.generation > 0:
+                pass
                 # randomly test from mnist or fashion
-                tests = (self.testiter_mnist, self.testiter_fashion)
-                rand = np.random.randint(2)
-                inputs, labels = tests[rand]()
-                print(
-                    '{} test set used at generation {} | 0=MNIST, 1=Fashion'.format(
-                        rand, generation))
+                # TODO test for accuracy with test set
+                # tests = (self.testiter_mnist, self.testiter_fashion)
+                # rand = np.random.randint(2)
+                # inputs, labels = tests[rand]()
+                # print(
+                #     '{} test set used at generation {} | 0=MNIST, 1=Fashion'.format(
+                #         rand, self.generation))
             outputs = self.conv_net(inputs)
-            conv_loss = self.criterion(outputs, labels)
+            conv_loss = self.criterion(outputs, targets)
             outputs = self.mlp_net(inputs)
-            mlp_loss = self.criterion(outputs, labels)
-            conv_params = []
-            mlp_params = []
-            for c, m in zip(traj.individual.conv_params, traj.individual.mlp_params):
+            mlp_loss = self.criterion(outputs, targets)
+            conv_out = []
+            mlp_out = []
+            for c, m in zip(traj.individual.conv_ens, traj.individual.mlp_ens):
                 d = self._shape_parameter_to_conv_net(c)
                 self.conv_net.set_parameter(**d)
-                conv_params.append(self.conv_net(inputs).numpy().T)
+                conv_out.append(self.conv_net(inputs).numpy().T)
                 d = self._shape_parameter_to_mlp_net(m)
                 self.mlp_net.set_parameter(**d)
-                mlp_params.append(self.mlp_net(inputs).numpy().T)
+                mlp_out.append(self.mlp_net(inputs).numpy().T)
             print('Conv loss {}, Mlp loss {}'.format(float(conv_loss),
                                                      float(mlp_loss)))
             out = {
-                'conv_params': np.array(conv_params),
-                'mlp_params': np.array(mlp_params),
+                'conv_out': np.array(conv_out),
+                'mlp_out': np.array(mlp_out),
                 'conv_loss': float(conv_loss),
                 'mlp_loss': float(mlp_loss),
             }
