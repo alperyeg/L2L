@@ -43,7 +43,7 @@ class DataLoader:
             transform=transform)
         trainloader_fashion = torch.utils.data.DataLoader(trainset_fashion,
                                                           batch_size=batch_size,
-                                                          shuffle=True,
+                                                          shuffle=False,
                                                           num_workers=0)
 
         testset_fashion = torchvision.datasets.FashionMNIST(root=root,

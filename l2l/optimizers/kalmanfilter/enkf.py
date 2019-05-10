@@ -1,6 +1,5 @@
 import numpy as np
 import abc
-import multiprocessing as mp
 from numpy import sqrt
 from numpy.linalg import norm, inv, solve
 from abc import ABCMeta
@@ -217,18 +216,20 @@ class EnsembleKalmanFilter(KalmanFilter):
 
                 for d in idx:
                     # now get only the individuals output according to idx
-                    self.g_tmp = model_output[:, :, d]
-                    self.observations_d = self.observations[d]
-                    #     self.ensemble = _update_step(self.ensemble, self.observations[d],
-                    #                                  g_tmp, self.gamma, ensemble_size)
-                    self.Cup = _cov_mat(self.ensemble, self.g_tmp,
-                                        ensemble_size)
-                    self.Cpp = _cov_mat(self.g_tmp, self.g_tmp,
-                                        self.ensemble_size)
-                    with mp.Pool(mp.cpu_count()) as pool:
-                        ens = pool.map(self._parallel_update,
-                                       range(self.ensemble_size))
-                    self.ensemble = np.array(ens)
+                    # self.observations_d = self.observations[d]
+                    g_tmp = model_output[:, :, d]
+                    self.ensemble = _update_step(self.ensemble,
+                                                 self.observations[d],
+                                                 g_tmp, self.gamma,
+                                                 ensemble_size)
+                    # self.Cup = _cov_mat(self.ensemble, self.g_tmp,
+                    #                     ensemble_size)
+                    # self.Cpp = _cov_mat(self.g_tmp, self.g_tmp,
+                    #                     self.ensemble_size)
+                    # with mp.Pool(mp.cpu_count()) as pool:
+                    #     ens = pool.map(self._parallel_update,
+                    #                    range(self.ensemble_size))
+                    # self.ensemble = np.array(ens)
 
             self.m1 = np.mean(self.ensemble, axis=0)
         return self

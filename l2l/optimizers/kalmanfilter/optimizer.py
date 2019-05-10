@@ -1,5 +1,6 @@
 import logging
 import numpy as np
+import torch
 
 from collections import namedtuple
 from l2l import get_grouped_dict
@@ -140,13 +141,26 @@ class EnsembleKalmanFilter(Optimizer):
         self.testiter_fashion = self.data_loader.testiter_fashion
         self.testiter_mnist = self.data_loader.testiter_mnist
 
-        self.inputs, self.targets = self.dataiter_fashion()
+        self.inputs, self.targets = self._get_data(
+            self.data_loader.data_mnist_loader)
 
         for e in self.eval_pop:
             e["inputs"] = self.inputs
             e["targets"] = self.targets
 
         self._expand_trajectory(traj)
+
+    def _get_data(self, dataloader, rng=2, channel=1):
+        shape_x = dataloader.dataset.data.shape[-2]
+        shape_y = dataloader.dataset.data.shape[-1]
+        data_tmp = torch.Tensor(rng, channel, shape_x, shape_y)
+        target_tmp = torch.Tensor(rng)
+        for j in range(rng):
+            if j % 2 == 0:
+                data_tmp[j], target_tmp[j] = self.dataiter_fashion()
+            else:
+                data_tmp[j], target_tmp[j] = self.dataiter_mnist()
+        return data_tmp, target_tmp.type(torch.int64)
 
     def post_process(self, traj, fitnesses_results):
         """
@@ -175,10 +189,11 @@ class EnsembleKalmanFilter(Optimizer):
         conv_fitnesses = []
         mlp_fitnesses = []
 
-        if traj.generation% 2 == 0:
-            self.inputs, self.targets = self.dataiter_fashion()
-        else:
-            self.inputs, self.targets = self.dataiter_mnist()
+        # if traj.generation % 2 == 0:
+        #     self.inputs, self.targets = self.dataiter_fashion()
+        # else:
+        #     self.inputs, self.targets = self.dataiter_mnist()
+        self.inputs, self.targets = self._get_data(self.data_loader.data_mnist_loader)
         data_inputs = self.inputs.squeeze().numpy()
         data_targets = self.targets.numpy()
         # go over all individuals
